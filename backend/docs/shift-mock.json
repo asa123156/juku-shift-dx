@@ -1,0 +1,19 @@
+[
+  {
+    "date": "2026-05-18",
+    "time_slot": 1,
+    "teacher_name": "前原先生",
+    "students": [
+      { "student_name": "近大太郎", "subject_name": "数学I" },
+      { "student_name": "近大次郎", "subject_name": "英語" }
+    ]
+  },
+  {
+    "date": "2026-05-18",
+    "time_slot": 1,
+    "teacher_name": "浅井先生",
+    "students": [
+      { "student_name": "山田花子", "subject_name": "国語" }
+    ]
+  }
+]
