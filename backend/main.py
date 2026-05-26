@@ -1,12 +1,18 @@
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI()
 
-@app.get("/")
-def read_root():
-    return {"message": "Hello Juku DX Backend!"}
+# フロントエンド（React）と通信できるようにするための「おまじない」
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # 開発中はどこからでもアクセスOKにする
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-# 友達に渡した「JSONの形」を返す窓口（API）の試作品
+# シフトデータを返すAPIのルート
 @app.get("/api/lessons")
 def get_lessons():
     return [
@@ -15,7 +21,16 @@ def get_lessons():
             "time_slot": 1,
             "teacher_name": "前原先生",
             "students": [
-                { "student_name": "近大太郎", "subject_name": "数学I" }
+                { "student_name": "近大太郎", "subject_name": "数学I" },
+                { "student_name": "近大次郎", "subject_name": "英語" }
+            ]
+        },
+        {
+            "date": "2026-05-18",
+            "time_slot": 1,
+            "teacher_name": "浅井先生",
+            "students": [
+                { "student_name": "山田花子", "subject_name": "国語" }
             ]
         }
     ]
