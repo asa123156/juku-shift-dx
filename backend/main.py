@@ -1,36 +1,26 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-app = FastAPI()
+from routers import lessons, shifts
 
-# フロントエンド（React）と通信できるようにするための「おまじない」
+app = FastAPI(
+    title="JUKU-SHIFT DX API",
+    description="個別指導塾シフト管理 API",
+    version="0.1.0",
+)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # 開発中はどこからでもアクセスOKにする
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# シフトデータを返すAPIのルート
-@app.get("/api/lessons")
-def get_lessons():
-    return [
-        {
-            "date": "2026-05-18",
-            "time_slot": 1,
-            "teacher_name": "前原先生",
-            "students": [
-                { "student_name": "近大太郎", "subject_name": "数学I" },
-                { "student_name": "近大次郎", "subject_name": "英語" }
-            ]
-        },
-        {
-            "date": "2026-05-18",
-            "time_slot": 1,
-            "teacher_name": "浅井先生",
-            "students": [
-                { "student_name": "山田花子", "subject_name": "国語" }
-            ]
-        }
-    ]
+app.include_router(shifts.router)
+app.include_router(lessons.router)
+
+
+@app.get("/health")
+def health() -> dict[str, str]:
+    return {"status": "ok"}

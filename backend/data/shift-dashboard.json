@@ -1,0 +1,43 @@
+{
+  "date": "2026-06-10",
+  "display_date": "2026年 6月10日 (月) の状況",
+  "metrics": {
+    "unsubmitted_teachers": 3,
+    "shortage_slots": 5
+  },
+  "time_slots": [
+    { "slot": 1, "label": "1コマ", "start": "13:00", "end": "14:20" },
+    { "slot": 2, "label": "2コマ", "start": "14:30", "end": "15:50" },
+    { "slot": 3, "label": "3コマ", "start": "16:00", "end": "17:20" },
+    { "slot": 4, "label": "4コマ", "start": "17:30", "end": "18:50" }
+  ],
+  "teachers": [
+    {
+      "id": 1,
+      "name": "田中 先生",
+      "color": "bg-blue-100 text-blue-600",
+      "s1": "確定",
+      "s2": "確定",
+      "s3": "不可",
+      "s4": "不可"
+    },
+    {
+      "id": 2,
+      "name": "佐藤 先生",
+      "color": "bg-pink-100 text-pink-600",
+      "s1": "不可",
+      "s2": "待機",
+      "s3": "不足",
+      "s4": "未提出"
+    },
+    {
+      "id": 3,
+      "name": "鈴木 先生",
+      "color": "bg-green-100 text-green-600",
+      "s1": "待機",
+      "s2": "待機",
+      "s3": "確定",
+      "s4": "待機"
+    }
+  ]
+}
