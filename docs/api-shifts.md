@@ -1,143 +1,60 @@
-# シフト API
+# シフト API 詳細
 
-## `GET /api/shifts`
+一覧は [api.md](./api.md) を参照。
 
-教室長ダッシュボード用。講師の提出があれば `teachers` 行に反映し、`metrics` を再計算します。
+## 日付
 
-| クエリ | 必須 | 説明 |
-|--------|------|------|
-| `date` | いいえ | `YYYY-MM-DD`。不一致は `404` |
+`GET /api/shifts/dates` で一覧取得。フロントの日付タブ対応:
 
-データ源: `backend/data/shift-dashboard.json` + `backend/data/teacher-submissions.json`
+- `2026-06-10`（月）
+- `2026-06-11`（火）
+- `2026-06-12`（水）
 
----
+## `GET /api/shifts?date=`
+
+提出・教室長操作を反映したダッシュボードを返す。
 
 ## `GET /api/shifts/me`
 
-講師シフト入力画面用（○/×/未入力）。
+| クエリ | 必須 |
+|--------|------|
+| `teacher_id` | はい |
+| `date` | いいえ（省略時 `2026-06-10`） |
 
-| クエリ | 必須 | 説明 |
-|--------|------|------|
-| `teacher_id` | はい | 例: `1`（田中 先生） |
-| `date` | いいえ | 省略時はダッシュボードの既定日 |
-
-### レスポンス例
-
-```json
-{
-  "teacher_id": 1,
-  "date": "2026-06-10",
-  "slots": {
-    "1": "available",
-    "2": "unavailable",
-    "3": "blank",
-    "4": "blank"
-  }
-}
-```
-
-| 値 | UI |
-|----|-----|
-| `available` | ○ |
-| `unavailable` | × |
-| `blank` | 未選択 |
-
----
+`slots`: `available` | `unavailable` | `blank`
 
 ## `POST /api/shifts`
 
-1日分をまとめて提出（「提出する」ボタン）。
-
-### リクエスト例
-
 ```json
 {
   "teacher_id": 1,
   "date": "2026-06-10",
-  "slots": {
-    "1": "available",
-    "2": "available",
-    "3": "unavailable",
-    "4": "blank"
-  }
+  "slots": { "1": "available", "2": "available", "3": "unavailable", "4": "blank" }
 }
 ```
 
-`slots` は `"1"`〜`"4"` をすべて含めること。
-
-### 教室長画面への変換
-
-| 提出値 | ダッシュボード表示 |
-|--------|-------------------|
+| 提出値 | ダッシュボード |
+|--------|----------------|
 | `available` | 待機 |
 | `unavailable` | 不可 |
 | `blank` | 未提出 |
 
-### フロント接続例（StudentShift）
+## 教室長
 
-```javascript
-const body = {
-  teacher_id: 1,
-  date: '2026-06-10',
-  slots: {
-    '1': shiftData.slot1 === 'available' ? 'available' : shiftData.slot1 === 'unavailable' ? 'unavailable' : 'blank',
-    '2': /* slot2 同様 */,
-    '3': /* ... */,
-    '4': /* ... */,
-  },
-};
-await fetch('http://127.0.0.1:8000/api/shifts', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify(body),
-});
-```
-
----
-
-## `PATCH /api/shifts`
-
-1コマだけ更新（任意）。
+### `PATCH /api/admin/shifts/slot`
 
 ```json
-{
-  "teacher_id": 1,
-  "date": "2026-06-10",
-  "slot": 3,
-  "status": "unavailable"
-}
+{ "date": "2026-06-10", "teacher_id": 2, "slot": 3, "status": "確定" }
 ```
 
----
+### `POST /api/admin/shifts/confirm`
 
-## 教室長ダッシュボード（GET レスポンス）
-
-`teachers` のステータス: `確定` / `待機` / `不可` / `不足` / `未提出`
-
-```javascript
-const res = await fetch('http://127.0.0.1:8000/api/shifts?date=2026-06-10');
-const { teachers, metrics, display_date } = await res.json();
-setTeachers(teachers);
+```json
+{ "date": "2026-06-10" }
 ```
 
----
+当日の「待機」をすべて「確定」にする（「シフトを確定する」ボタン用）。
 
-## 起動・確認
+## 認証（開発用）
 
-```bash
-cd backend
-source .venv/bin/activate
-uvicorn main:app --reload
-```
-
-```bash
-# 提出
-curl -s -X POST http://127.0.0.1:8000/api/shifts \
-  -H 'Content-Type: application/json' \
-  -d '{"teacher_id":1,"date":"2026-06-10","slots":{"1":"available","2":"available","3":"unavailable","4":"blank"}}'
-
-# ダッシュボードで反映確認
-curl -s 'http://127.0.0.1:8000/api/shifts' | python3 -m json.tool
-```
-
-- Swagger: http://127.0.0.1:8000/docs
+`POST /api/auth/login` — `teacher@example.com` / `admin@example.com`、パスワード `demo`

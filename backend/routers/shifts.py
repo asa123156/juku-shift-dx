@@ -2,6 +2,8 @@ from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Query
 
+from config import DEFAULT_SHIFT_DATE
+from schemas.admin import ShiftDatesResponse, TeacherListItem
 from schemas.shifts import (
     ShiftDashboardResponse,
     ShiftSlotUpdateRequest,
@@ -9,9 +11,11 @@ from schemas.shifts import (
     ShiftSubmitResponse,
     TeacherShiftSubmissionResponse,
 )
-from services.data_loader import load_shift_dashboard
+from services.dashboard_builder import build_shift_dashboard, build_shift_dashboard_base_only
+from services.data_loader import list_shift_dates, resolve_shift_date
 from services.shift_store import (
     build_teacher_submission_response,
+    ensure_teacher_exists,
     save_teacher_submission,
     update_single_slot,
 )
@@ -19,55 +23,51 @@ from services.shift_store import (
 router = APIRouter(prefix="/api", tags=["shifts"])
 
 
+@router.get("/shifts/dates", response_model=ShiftDatesResponse)
+def get_shift_dates() -> ShiftDatesResponse:
+    dates = list_shift_dates()
+    default = DEFAULT_SHIFT_DATE if DEFAULT_SHIFT_DATE in dates else (dates[0] if dates else DEFAULT_SHIFT_DATE)
+    return ShiftDatesResponse(dates=dates, default_date=default)
+
+
+@router.get("/shifts/teachers", response_model=list[TeacherListItem])
+def list_teachers(
+    date: Annotated[str | None, Query(description="対象日 YYYY-MM-DD")] = None,
+) -> list[TeacherListItem]:
+    dashboard = build_shift_dashboard_base_only(date)
+    return [
+        TeacherListItem(id=t["id"], name=t["name"], color=t["color"])
+        for t in dashboard.get("teachers", [])
+    ]
+
+
 @router.get("/shifts", response_model=ShiftDashboardResponse)
 def get_shifts(
     date: Annotated[
         str | None,
-        Query(description="対象日（YYYY-MM-DD）。省略時はモックの既定日を返す"),
+        Query(description="対象日（YYYY-MM-DD）。省略時は既定日"),
     ] = None,
 ) -> ShiftDashboardResponse:
-    """
-    教室長ダッシュボード用のシフト一覧を返す。
-    講師の提出データ（teacher-submissions.json）があれば該当行に反映する。
-    """
-    payload = load_shift_dashboard(date=date)
+    payload = build_shift_dashboard(date)
     return ShiftDashboardResponse.model_validate(payload)
 
 
 @router.get("/shifts/me", response_model=TeacherShiftSubmissionResponse)
 def get_my_shift(
-    teacher_id: Annotated[int, Query(ge=1, description="ログイン講師ID（開発中は 1 など）")],
-    date: Annotated[
-        str | None,
-        Query(description="対象日。省略時は shift-dashboard.json の date"),
-    ] = None,
+    teacher_id: Annotated[int, Query(ge=1, description="ログイン講師ID")],
+    date: Annotated[str | None, Query(description="対象日 YYYY-MM-DD")] = None,
 ) -> TeacherShiftSubmissionResponse:
-    """
-    講師シフト入力画面用。コマごとの available / unavailable / blank を返す。
-    未提出の場合はダッシュボード行から推定した初期値を返す。
-    """
-    dashboard = load_shift_dashboard(date=date, apply_submissions=False)
-    resolved_date = dashboard["date"]
-    if date is not None and date != resolved_date:
-        raise HTTPException(status_code=404, detail=f"No shift data for date={date}")
-
-    payload = build_teacher_submission_response(teacher_id, resolved_date, dashboard)
+    resolved = resolve_shift_date(date)
+    dashboard = build_shift_dashboard_base_only(resolved)
+    payload = build_teacher_submission_response(teacher_id, resolved, dashboard)
     return TeacherShiftSubmissionResponse.model_validate(payload)
 
 
 @router.post("/shifts", response_model=ShiftSubmitResponse)
 def submit_shifts(body: ShiftSubmitRequest) -> ShiftSubmitResponse:
-    """
-    講師が1日分のシフトを提出する（フロントの「提出する」ボタン用）。
-    教室長ダッシュボードでは ○→待機、×→不可、未入力→未提出 に変換される。
-    """
-    dashboard = load_shift_dashboard(date=body.date, apply_submissions=False)
-    if dashboard.get("date") != body.date:
-        raise HTTPException(status_code=404, detail=f"No shift data for date={body.date}")
-
-    teacher_ids = {t["id"] for t in dashboard.get("teachers", [])}
-    if body.teacher_id not in teacher_ids:
-        raise HTTPException(status_code=404, detail=f"Teacher id={body.teacher_id} not found")
+    resolve_shift_date(body.date)
+    dashboard = build_shift_dashboard_base_only(body.date)
+    ensure_teacher_exists(dashboard, body.teacher_id)
 
     dashboard_status = save_teacher_submission(body.teacher_id, body.date, body.slots)
     return ShiftSubmitResponse(
@@ -80,14 +80,9 @@ def submit_shifts(body: ShiftSubmitRequest) -> ShiftSubmitResponse:
 
 @router.patch("/shifts", response_model=ShiftSubmitResponse)
 def patch_shift_slot(body: ShiftSlotUpdateRequest) -> ShiftSubmitResponse:
-    """1コマだけ更新する（オプション。フロントがコマ単位で送る場合）"""
-    dashboard = load_shift_dashboard(date=body.date, apply_submissions=False)
-    if dashboard.get("date") != body.date:
-        raise HTTPException(status_code=404, detail=f"No shift data for date={body.date}")
-
-    teacher_ids = {t["id"] for t in dashboard.get("teachers", [])}
-    if body.teacher_id not in teacher_ids:
-        raise HTTPException(status_code=404, detail=f"Teacher id={body.teacher_id} not found")
+    resolve_shift_date(body.date)
+    dashboard = build_shift_dashboard_base_only(body.date)
+    ensure_teacher_exists(dashboard, body.teacher_id)
 
     dashboard_status = update_single_slot(
         body.teacher_id, body.date, body.slot, body.status

@@ -1,6 +1,6 @@
 # JUKU-SHIFT DX バックエンド
 
-FastAPI による API サーバーです。
+FastAPI による API サーバーです。**フロント接続前に必要な API は一通り揃えています。**
 
 ## セットアップ
 
@@ -17,28 +17,59 @@ pip install -r requirements.txt
 uvicorn main:app --reload
 ```
 
-- API ドキュメント: http://127.0.0.1:8000/docs
-- ヘルスチェック: http://127.0.0.1:8000/health
+- Swagger: http://127.0.0.1:8000/docs
+- ヘルス: http://127.0.0.1:8000/health
 
-## エンドポイント
+## テスト
 
-| メソッド | パス | 説明 | データ源 |
-|----------|------|------|----------|
-| GET | `/api/shifts` | 教室長ダッシュボード用シフト | `shift-dashboard.json` + 提出の反映 |
-| GET | `/api/shifts/me` | 講師入力用（○/×） | 同上 |
-| POST | `/api/shifts` | 講師が1日分提出 | `teacher-submissions.json` に保存 |
-| PATCH | `/api/shifts` | 1コマだけ更新 | 同上 |
-| GET | `/api/lessons` | 授業コマ割り | `docs/lesson_mock.json` |
+```bash
+python -m tests.test_api
+```
 
-詳細は [docs/api-shifts.md](../docs/api-shifts.md) を参照してください。
+## エンドポイント一覧
+
+| メソッド | パス | 説明 |
+|----------|------|------|
+| POST | `/api/auth/login` | モックログイン |
+| GET | `/api/shifts/dates` | 日付一覧 |
+| GET | `/api/shifts/teachers` | 講師一覧 |
+| GET | `/api/shifts` | 教室長ダッシュボード |
+| GET | `/api/shifts/me` | 講師入力用 |
+| POST | `/api/shifts` | 講師提出 |
+| PATCH | `/api/shifts` | 講師1コマ更新 |
+| PATCH | `/api/admin/shifts/slot` | 教室長がコマ変更 |
+| POST | `/api/admin/shifts/confirm` | 待機→一括確定 |
+| GET | `/api/lessons` | 授業コマ割り |
+
+仕様詳細: [docs/api.md](../docs/api.md)
+
+## デモアカウント
+
+| メール | パスワード |
+|--------|------------|
+| `teacher@example.com` | `demo` |
+| `admin@example.com` | `demo` |
+
+## データファイル
+
+```
+backend/data/
+  shift-dashboards/   # 日別ダッシュボード（2026-06-10 など）
+  teacher-submissions.json
+  admin-overrides.json
+  users.json
+docs/lesson_mock.json   # 授業コマ割り
+```
 
 ## フォルダ構成
 
 ```
 backend/
-  main.py              # FastAPI アプリ・CORS
-  routers/             # ルート定義
-  schemas/             # Pydantic モデル
-  services/            # JSON 読み込みなど
-  data/                # シフト用モック JSON
+  main.py
+  config.py
+  routers/    # auth, shifts, admin, lessons
+  schemas/
+  services/   # data_loader, shift_store, admin_store, dashboard_builder
+  tests/
+  data/
 ```

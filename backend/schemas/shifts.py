@@ -19,8 +19,6 @@ class DashboardMetrics(BaseModel):
 
 
 class TeacherShiftRow(BaseModel):
-    """教室長ダッシュボードの表1行分（フロントの teachers state と同型）"""
-
     id: int
     name: str
     color: str = Field(description="Tailwind のクラス名（アバター用）")
@@ -39,12 +37,10 @@ class ShiftDashboardResponse(BaseModel):
 
 
 class TeacherShiftSubmissionResponse(BaseModel):
-    """講師シフト入力画面用（フロントの available / unavailable / blank）"""
-
     teacher_id: int
     date: str
     slots: dict[str, AvailabilityStatus] = Field(
-        description='コマ番号をキーにした可否（例: {"1": "available", "2": "unavailable"}）'
+        description='コマ番号をキーにした可否（例: {"1": "available"}）'
     )
 
 
@@ -56,12 +52,10 @@ class ShiftSlotUpdateRequest(BaseModel):
 
 
 class ShiftSubmitRequest(BaseModel):
-    """提出ボタン用：1日分の4コマをまとめて送る"""
-
     teacher_id: int = Field(ge=1, description="開発中は 1=田中 先生 など")
     date: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
     slots: dict[str, AvailabilityStatus] = Field(
-        description='キーは "1"〜"4"（フロントの slot1 → "1" に変換して送る）'
+        description='キーは "1"〜"4"（フロントの slot1 → "1"）'
     )
 
     @field_validator("slots")

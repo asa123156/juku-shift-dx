@@ -1,23 +1,42 @@
 # juku-shift-dx
-個別指導塾の複雑なコマ割りやシフト管理を自動化・効率化するためのWebアプリケーションです。
-フロントエンド（React）とバックエンド（FastAPI）を連携させて開発しています。
 
-## 📁 フォルダ構成
+個別指導塾のコマ割り・シフト管理 Web アプリ（React + FastAPI）。
 
-- `バックエンド/` : FastAPI（Python）によるバックエンドAPIサーバー
-- `ドキュメント/` : フロント・バック間のデータ設計（JSONモックなど）
+## フォルダ構成
 
-## 🚀 バックエンドの起動方法
-他のメンバーが自分のPCでこのバックエンドを動かすための手順です。
-### 1. 仮想環境の有効化
-ターミナルで `juku-shift-dx` のルート（一番上）にいる状態から、以下を実行します。
+| パス | 内容 |
+|------|------|
+| `frontend/` | React（Vite）UI |
+| `backend/` | FastAPI API サーバー |
+| `docs/` | API 仕様・JSON モック |
+
+## バックエンドの起動
+
 ```bash
-cd バックエンド
-source .venv/bin/activate  # Macの場合
-# .venv\Scripts\activate  # Windowsの場合
-起動コマンド
+cd backend
+python3 -m venv .venv
+source .venv/bin/activate   # Windows: .venv\Scripts\activate
+pip install -r requirements.txt
 uvicorn main:app --reload
-🛠 使用技術（技術スタック）
-バックエンド : Python 3.x / FastAPI / Uvicorn
-フロントエンド : React（TypeScript）
-環境管理 : venv (Python仮想環境)
+```
+
+- API ドキュメント: http://127.0.0.1:8000/docs
+- 仕様一覧: [docs/api.md](docs/api.md)
+
+## フロントエンドの起動
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+## 技術スタック
+
+- バックエンド: Python 3.x / FastAPI / Uvicorn / Pydantic
+- フロントエンド: React / Vite / Tailwind CSS
+- 環境: venv（Python）
+
+## 開発ブランチ
+
+バックエンド API 一式: `feat/api-shifts`（マージ前はこのブランチを checkout）

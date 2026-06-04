@@ -1,0 +1,18 @@
+[
+  {
+    "email": "teacher@example.com",
+    "password": "demo",
+    "role": "teacher",
+    "teacher_id": 1,
+    "name": "田中 先生",
+    "redirect": "/student"
+  },
+  {
+    "email": "admin@example.com",
+    "password": "demo",
+    "role": "admin",
+    "teacher_id": null,
+    "name": "教室長",
+    "redirect": "/admin"
+  }
+]
