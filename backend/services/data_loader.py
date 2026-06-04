@@ -17,7 +17,9 @@ def _read_json(path: Path) -> object:
         return json.load(f)
 
 
-def load_shift_dashboard(date: str | None = None) -> dict:
+def load_shift_dashboard(date: str | None = None, *, apply_submissions: bool = True) -> dict:
+    from services.shift_store import apply_submissions_to_dashboard
+
     path = BACKEND_DIR / "data" / "shift-dashboard.json"
     data = _read_json(path)
     if date is not None and data.get("date") != date:
@@ -25,6 +27,8 @@ def load_shift_dashboard(date: str | None = None) -> dict:
             status_code=404,
             detail=f"No shift dashboard for date={date}",
         )
+    if apply_submissions:
+        data = apply_submissions_to_dashboard(data)
     return data
 
 
