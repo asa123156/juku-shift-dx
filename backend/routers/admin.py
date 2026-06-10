@@ -1,4 +1,5 @@
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, File, HTTPException, Query, UploadFile
+from fastapi.responses import PlainTextResponse
 
 from schemas.admin import (
     AdminConfirmRequest,
@@ -13,6 +14,13 @@ from schemas.assignment import (
     AutoAssignResponse,
     ImportAssignmentRequestsResponse,
 )
+from schemas.period import (
+    PeriodCreateRequest,
+    PeriodListResponse,
+    PeriodResponse,
+    PeriodStatusUpdateRequest,
+    ShiftImportResponse,
+)
 from schemas.shifts import ShiftDashboardResponse
 from services.admin_store import confirm_all_pending, set_slot_status
 from services.assignment_engine import (
@@ -25,6 +33,8 @@ from services.auto_assign import run_auto_assign
 from services.csv_import import import_assignment_requests_from_csv
 from services.dashboard_builder import build_shift_dashboard, build_shift_dashboard_base_only
 from services.data_loader import resolve_shift_date
+from services.period_store import create_period, get_period, iter_dates, list_periods, update_period_status
+from services.shift_excel import export_shift_excel_csv, import_shift_excel_csv
 from services.shift_store import ensure_teacher_exists
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
@@ -122,4 +132,67 @@ async def import_assignment_requests(
         skipped_count=skipped,
         by_date=by_date,
         message=f"{imported} 件を取り込みました（重複 {skipped} 件スキップ）",
+    )
+
+
+@router.get("/periods", response_model=PeriodListResponse)
+def get_periods() -> PeriodListResponse:
+    periods, active_id = list_periods()
+    return PeriodListResponse(periods=periods, active_period_id=active_id)
+
+
+@router.post("/periods", response_model=PeriodResponse)
+def create_shift_period(body: PeriodCreateRequest) -> PeriodResponse:
+    period = create_period(body.name, body.start_date, body.end_date)
+    dates = iter_dates(period.start_date, period.end_date)
+    return PeriodResponse(
+        period=period,
+        dates=dates,
+        message=f"期間「{period.name}」を DRAFT で作成しました",
+    )
+
+
+@router.patch("/periods/{period_id}/status", response_model=PeriodResponse)
+def change_period_status(period_id: int, body: PeriodStatusUpdateRequest) -> PeriodResponse:
+    period = update_period_status(period_id, body.status)
+    dates = iter_dates(period.start_date, period.end_date)
+    return PeriodResponse(
+        period=period,
+        dates=dates,
+        message=f"期間ステータスを {body.status} に更新しました",
+    )
+
+
+@router.post("/shifts/import-excel", response_model=ShiftImportResponse)
+async def import_shift_excel(
+    period_id: int = Query(..., ge=1),
+    file: UploadFile = File(..., description="role,entity_id,date,slot,symbol CSV"),
+) -> ShiftImportResponse:
+    if not file.filename or not file.filename.lower().endswith(".csv"):
+        raise HTTPException(status_code=400, detail="CSV ファイルを指定してください")
+    raw = await file.read()
+    for encoding in ("utf-8-sig", "utf-8", "cp932"):
+        try:
+            content = raw.decode(encoding)
+            break
+        except UnicodeDecodeError:
+            content = None
+    if content is None:
+        raise HTTPException(status_code=400, detail="CSV の文字コードを判別できません")
+    count = import_shift_excel_csv(period_id, content)
+    return ShiftImportResponse(
+        period_id=period_id,
+        imported_count=count,
+        message=f"通常授業（◎）を {count} 件取り込みました",
+    )
+
+
+@router.get("/shifts/export-excel")
+def export_shift_excel(period_id: int = Query(..., ge=1)) -> PlainTextResponse:
+    get_period(period_id)
+    csv_text = export_shift_excel_csv(period_id)
+    return PlainTextResponse(
+        content=csv_text,
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="shift-period-{period_id}.csv"'},
     )

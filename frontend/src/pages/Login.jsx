@@ -27,7 +27,9 @@ export default function Login() {
         throw new Error(
           expectedRole === 'teacher'
             ? '講師アカウントでログインしてください'
-            : '教室長アカウントでログインしてください',
+            : expectedRole === 'student'
+              ? '生徒アカウントでログインしてください'
+              : '教室長アカウントでログインしてください',
         );
       }
       saveSession(data);
@@ -81,6 +83,14 @@ export default function Login() {
               className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white font-bold py-3 rounded-xl shadow-md transition-all active:scale-95"
             >
               講師としてログイン
+            </button>
+            <button
+              type="button"
+              onClick={() => handleLogin('student')}
+              disabled={isLoading}
+              className="w-full bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-400 text-white font-bold py-3 rounded-xl shadow-md transition-all active:scale-95"
+            >
+              生徒としてログイン
             </button>
             <button
               type="button"

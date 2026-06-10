@@ -8,6 +8,9 @@ export default function DataImport() {
   const isReady = useAdminSession();
   const [isDragging, setIsDragging] = useState(false);
   const [selectedFile, setSelectedFile] = useState(null);
+  const [shiftFile, setShiftFile] = useState(null);
+  const [periodId, setPeriodId] = useState(1);
+  const [importMode, setImportMode] = useState('assignments');
   const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState(null);
   const [result, setResult] = useState(null);
@@ -33,22 +36,24 @@ export default function DataImport() {
   };
 
   const handleImport = async () => {
-    if (!selectedFile || isUploading) return;
+    const file = importMode === 'assignments' ? selectedFile : shiftFile;
+    if (!file || isUploading) return;
 
     setIsUploading(true);
     setError(null);
     setResult(null);
     try {
       const formData = new FormData();
-      formData.append('file', selectedFile);
-      const res = await fetch('/api/admin/assignment-requests/import', {
-        method: 'POST',
-        body: formData,
-      });
+      formData.append('file', file);
+      const url = importMode === 'assignments'
+        ? '/api/admin/assignment-requests/import'
+        : `/api/admin/shifts/import-excel?period_id=${periodId}`;
+      const res = await fetch(url, { method: 'POST', body: formData });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.detail || 'インポートに失敗しました');
       setResult(body);
-      setSelectedFile(null);
+      if (importMode === 'assignments') setSelectedFile(null);
+      else setShiftFile(null);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -77,10 +82,24 @@ export default function DataImport() {
           <p className="text-gray-500 mt-1">iPadのExcelから書き出した授業情報をシステムに取り込みます</p>
         </header>
 
-        <div className="bg-white p-10 rounded-2xl shadow-sm border border-gray-200 max-w-2xl">
-          <div className="mb-6 p-4 bg-blue-50 border border-blue-100 rounded-lg text-sm text-blue-800">
+        <div className="bg-white p-10 rounded-2xl shadow-sm border border-gray-200 max-w-2xl space-y-6">
+          <div className="flex gap-2">
+            <button type="button" onClick={() => setImportMode('assignments')} className={`px-4 py-2 rounded-lg font-bold ${importMode === 'assignments' ? 'bg-blue-600 text-white' : 'bg-gray-100'}`}>割当リクエスト</button>
+            <button type="button" onClick={() => setImportMode('shifts')} className={`px-4 py-2 rounded-lg font-bold ${importMode === 'shifts' ? 'bg-blue-600 text-white' : 'bg-gray-100'}`}>通常授業（◎）</button>
+          </div>
+
+          {importMode === 'shifts' && (
+            <div className="flex items-center gap-3">
+              <label className="text-sm font-bold text-gray-700">募集期間 ID</label>
+              <input type="number" min={1} value={periodId} onChange={(e) => setPeriodId(Number(e.target.value))} className="border rounded-lg px-3 py-2 w-24" />
+            </div>
+          )}
+
+          <div className="p-4 bg-blue-50 border border-blue-100 rounded-lg text-sm text-blue-800">
             <p className="font-bold mb-1">CSV 形式</p>
-            <code className="text-xs block whitespace-pre">{`date,student_id,student_name,subject\n2026-06-11,1,近大太郎,数学I`}</code>
+            <code className="text-xs block whitespace-pre">{importMode === 'assignments'
+              ? `date,student_id,student_name,subject\n2026-06-11,1,近大太郎,数学I`
+              : `role,entity_id,date,slot,symbol\nteacher,1,2026-06-10,1,◎`}</code>
           </div>
 
           <div
@@ -100,7 +119,7 @@ export default function DataImport() {
                 type="file"
                 className="hidden"
                 accept=".csv"
-                onChange={(e) => pickFile(e.target.files?.[0])}
+                onChange={(e) => (importMode === 'assignments' ? pickFile(e.target.files?.[0]) : (setShiftFile(e.target.files?.[0]), setError(null), setResult(null)))}
               />
             </label>
           </div>
@@ -120,10 +139,10 @@ export default function DataImport() {
             </div>
           )}
 
-          {selectedFile && (
+          {(importMode === 'assignments' ? selectedFile : shiftFile) && (
             <div className="mt-6 p-4 bg-emerald-50 border border-emerald-200 rounded-lg flex items-center justify-between">
               <div className="flex items-center gap-3 text-emerald-700 font-bold">
-                <span>📄</span> {selectedFile.name}
+                <span>📄</span> {(importMode === 'assignments' ? selectedFile : shiftFile).name}
               </div>
               <button
                 type="button"

@@ -45,9 +45,45 @@ def run_tests() -> None:
     payload = {
         "teacher_id": 1,
         "date": "2026-06-10",
-        "slots": {"1": "regular_class", "2": "available", "3": "unavailable", "4": "blank"},
+        "slots": {"1": "◎", "2": "", "3": "×", "4": ""},
     }
     assert client.post("/api/shifts", json=payload).status_code == 200
+
+    me = client.get("/api/shifts/me", params={"teacher_id": 1, "date": "2026-06-10"}).json()
+    assert me["slots"]["1"] == "◎"
+    assert me["locked_slots"]["1"] is True
+
+    schedule = client.get(
+        "/api/shifts/my-schedule",
+        params={"role": "teacher", "entity_id": 1, "period_id": 1},
+    ).json()
+    assert schedule["period_status"] == "COLLECTING"
+    assert len(schedule["dates"]) == 3
+
+    bulk = client.patch(
+        "/api/shifts/bulk",
+        json={
+            "role": "student",
+            "entity_id": 1,
+            "period_id": 1,
+            "submissions": [
+                {"date": "2026-06-10", "slots": {"1": "◎", "2": "", "3": "×", "4": ""}},
+                {"date": "2026-06-11", "slots": {"1": "×", "2": "", "3": "", "4": ""}},
+            ],
+        },
+    )
+    assert bulk.status_code == 200
+    assert len(bulk.json()["saved_dates"]) == 2
+
+    student_login = client.post(
+        "/api/auth/login",
+        json={"email": "student@example.com", "password": "demo"},
+    )
+    assert student_login.status_code == 200
+    assert student_login.json()["role"] == "student"
+
+    periods = client.get("/api/admin/periods").json()
+    assert len(periods["periods"]) >= 1
 
     merged = client.get("/api/shifts", params={"date": "2026-06-10"}).json()
     t1 = next(t for t in merged["teachers"] if t["id"] == 1)

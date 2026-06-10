@@ -12,7 +12,17 @@
     "password": "demo",
     "role": "admin",
     "teacher_id": null,
+    "student_id": null,
     "name": "教室長",
     "redirect": "/admin"
+  },
+  {
+    "email": "student@example.com",
+    "password": "demo",
+    "role": "student",
+    "teacher_id": null,
+    "student_id": 1,
+    "name": "近大太郎",
+    "redirect": "/student-schedule"
   }
 ]

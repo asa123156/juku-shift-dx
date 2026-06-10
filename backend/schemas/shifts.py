@@ -2,8 +2,11 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
-ShiftStatus = Literal["確定", "待機", "不可", "不足", "未提出", "AI提案", "通常授業"]
-AvailabilityStatus = Literal["regular_class", "available", "unavailable", "blank"]
+from schemas.period import SLOT_KEYS, SlotSymbol
+
+ShiftStatus = Literal[
+    "◎", "×", "", "確定", "不足", "未提出", "AI提案", "待機", "不可", "通常授業"
+]
 
 
 class TimeSlotInfo(BaseModel):
@@ -39,30 +42,29 @@ class ShiftDashboardResponse(BaseModel):
 class TeacherShiftSubmissionResponse(BaseModel):
     teacher_id: int
     date: str
-    slots: dict[str, AvailabilityStatus] = Field(
-        description='コマ番号をキーにした可否（"regular_class"=◎通常授業, "available"=空いてる, "unavailable"=×無理, "blank"=未入力）'
-    )
+    slots: dict[str, SlotSymbol] = Field(description='◎=通常授業, ×=不可, ""=空いてる')
+    period_id: int | None = None
+    period_status: str | None = None
+    readonly: bool = False
+    locked_slots: dict[str, bool] | None = None
 
 
 class ShiftSlotUpdateRequest(BaseModel):
     teacher_id: int = Field(ge=1)
     date: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
     slot: int = Field(ge=1, le=4, description="コマ番号（1〜4）")
-    status: AvailabilityStatus
+    status: SlotSymbol
 
 
 class ShiftSubmitRequest(BaseModel):
     teacher_id: int = Field(ge=1, description="開発中は 1=田中 先生 など")
     date: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
-    slots: dict[str, AvailabilityStatus] = Field(
-        description='キーは "1"〜"4"（フロントの slot1 → "1"）'
-    )
+    slots: dict[str, SlotSymbol] = Field(description='キーは "1"〜"4"')
 
     @field_validator("slots")
     @classmethod
-    def validate_slot_keys(cls, slots: dict[str, AvailabilityStatus]) -> dict[str, AvailabilityStatus]:
-        required = {"1", "2", "3", "4"}
-        if set(slots.keys()) != required:
+    def validate_slot_keys(cls, slots: dict[str, SlotSymbol]) -> dict[str, SlotSymbol]:
+        if set(slots.keys()) != SLOT_KEYS:
             raise ValueError('slots must include exactly "1", "2", "3", and "4"')
         return slots
 

@@ -1,0 +1,13 @@
+{
+  "next_id": 2,
+  "active_period_id": 1,
+  "items": [
+    {
+      "id": 1,
+      "name": "2026年6月シフト募集",
+      "start_date": "2026-06-10",
+      "end_date": "2026-06-12",
+      "status": "COLLECTING"
+    }
+  ]
+}

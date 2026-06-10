@@ -10,7 +10,8 @@ class LoginRequest(BaseModel):
 
 class LoginResponse(BaseModel):
     token: str
-    role: Literal["teacher", "admin"]
+    role: Literal["teacher", "admin", "student"]
     teacher_id: int | None = None
+    student_id: int | None = None
     name: str
     redirect: str

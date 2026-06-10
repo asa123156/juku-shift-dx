@@ -4,9 +4,9 @@ import { BrowserRouter, Routes, Route } from 'react-router-dom';
 
 import Login from './pages/Login';
 import StudentShift from './pages/StudentShift';
+import StudentSchedule from './pages/StudentSchedule';
 import AdminDashboard from './pages/AdminDashboard';
-// ★インポート画面を読み込む
-import DataImport from './pages/DataImport'; 
+import DataImport from './pages/DataImport';
 
 export default function App() {
   return (
@@ -14,9 +14,9 @@ export default function App() {
       <Routes>
         <Route path="/" element={<Login />} />
         <Route path="/student" element={<StudentShift />} />
+        <Route path="/student-schedule" element={<StudentSchedule />} />
         <Route path="/admin" element={<AdminDashboard />} />
-        {/* ★インポート画面のURLを設定 */}
-        <Route path="/import" element={<DataImport />} /> 
+        <Route path="/import" element={<DataImport />} />
       </Routes>
     </BrowserRouter>
   );

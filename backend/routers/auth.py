@@ -26,11 +26,13 @@ def login(body: LoginRequest) -> LoginResponse:
 
     role = match["role"]
     teacher_id = match.get("teacher_id")
-    token_suffix = teacher_id if teacher_id is not None else "admin"
+    student_id = match.get("student_id")
+    token_suffix = teacher_id if teacher_id is not None else (student_id if student_id is not None else "admin")
     return LoginResponse(
         token=f"mock-token-{token_suffix}",
         role=role,
         teacher_id=teacher_id,
+        student_id=student_id,
         name=match["name"],
         redirect=match["redirect"],
     )

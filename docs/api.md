@@ -32,6 +32,11 @@ Swagger: http://127.0.0.1:8000/docs
 | POST | `/api/admin/assignments/candidates` | 自動割当候補の取得（NGルール適用後） |
 | POST | `/api/admin/auto-assign` | 未割当リクエストの一括自動割当 |
 | POST | `/api/admin/assignment-requests/import` | CSV から未割当リクエストを取り込み |
+| GET | `/api/admin/periods` | 募集期間一覧 |
+| POST | `/api/admin/periods` | 募集期間作成（DRAFT） |
+| PATCH | `/api/admin/periods/{id}/status` | DRAFT→COLLECTING→FINALIZED |
+| POST | `/api/admin/shifts/import-excel` | 通常授業（◎）CSV 取込 |
+| GET | `/api/admin/shifts/export-excel` | 確定シフト CSV 出力 |
 
 ### 自動割当ルール
 

@@ -22,6 +22,9 @@ export default function AdminDashboard() {
   const [selectedCandidateIdx, setSelectedCandidateIdx] = useState(0);
   const [candidatesLoading, setCandidatesLoading] = useState(false);
   const [candidatesError, setCandidatesError] = useState(null);
+  const [periods, setPeriods] = useState([]);
+  const [activePeriodId, setActivePeriodId] = useState(null);
+  const [periodMessage, setPeriodMessage] = useState(null);
 
   const applyDashboard = useCallback((dashboard) => {
     setTeachers(dashboard.teachers);
@@ -47,6 +50,41 @@ export default function AdminDashboard() {
   useEffect(() => {
     fetchDashboard(selectedDate);
   }, [selectedDate, fetchDashboard]);
+
+  useEffect(() => {
+    fetch('/api/admin/periods')
+      .then((r) => r.json())
+      .then((data) => {
+        setPeriods(data.periods ?? []);
+        setActivePeriodId(data.active_period_id ?? null);
+      })
+      .catch(() => {});
+  }, []);
+
+  const handlePeriodStatus = async (status) => {
+    if (!activePeriodId) return;
+    setPeriodMessage(null);
+    try {
+      const res = await fetch(`/api/admin/periods/${activePeriodId}/status`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status }),
+      });
+      if (!res.ok) throw new Error('期間ステータスの更新に失敗しました');
+      const data = await res.json();
+      setPeriods((prev) => prev.map((p) => (p.id === data.period.id ? data.period : p)));
+      setPeriodMessage(data.message);
+    } catch (err) {
+      setLoadError(err.message);
+    }
+  };
+
+  const handleExport = () => {
+    if (!activePeriodId) return;
+    window.open(`/api/admin/shifts/export-excel?period_id=${activePeriodId}`, '_blank');
+  };
+
+  const activePeriod = periods.find((p) => p.id === activePeriodId);
 
   const getStatusStyle = (status) => {
     switch (status) {
@@ -266,8 +304,21 @@ export default function AdminDashboard() {
               <p className="text-gray-500 font-bold">のシフト状況</p>
             </div>
             {loadError && <p className="text-red-500 text-sm mt-2">{loadError}</p>}
+            {periodMessage && <p className="text-emerald-600 text-sm mt-2">{periodMessage}</p>}
+            {activePeriod && (
+              <p className="text-sm text-gray-600 mt-2">
+                募集期間: {activePeriod.name}（{activePeriod.status}）
+              </p>
+            )}
           </div>
-          <div className="flex gap-3">
+          <div className="flex flex-wrap gap-3 justify-end">
+            {activePeriod?.status === 'DRAFT' && (
+              <button type="button" onClick={() => handlePeriodStatus('COLLECTING')} className="bg-amber-500 hover:bg-amber-600 text-white px-4 py-3 rounded-xl font-bold shadow-md">配布開始</button>
+            )}
+            {activePeriod?.status === 'COLLECTING' && (
+              <button type="button" onClick={() => handlePeriodStatus('FINALIZED')} className="bg-emerald-700 hover:bg-emerald-800 text-white px-4 py-3 rounded-xl font-bold shadow-md">シフト確定</button>
+            )}
+            <button type="button" onClick={handleExport} disabled={!activePeriodId} className="bg-gray-600 hover:bg-gray-700 disabled:bg-gray-400 text-white px-4 py-3 rounded-xl font-bold shadow-md">CSVダウンロード</button>
             <button
               type="button"
               onClick={handleAutoAssign}
