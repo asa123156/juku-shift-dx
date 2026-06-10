@@ -51,7 +51,7 @@ export default function AdminDashboard() {
   const getStatusStyle = (status) => {
     switch (status) {
       case '確定': return 'bg-emerald-100 text-emerald-700 border-emerald-200';
-      case '◎': return 'bg-amber-100 text-amber-800 border-amber-400 border-2 font-bold';
+      case '通常授業': return 'bg-slate-100 text-slate-600 border-slate-300 border-2';
       case '待機': return 'bg-white text-blue-600 border-blue-400 border-2 hover:bg-blue-50';
       case '不可': return 'bg-gray-100 text-gray-400 border-gray-100';
       case '不足': return 'bg-yellow-100 text-yellow-700 border-yellow-300 animate-pulse';
@@ -98,7 +98,7 @@ export default function AdminDashboard() {
   };
 
   const handleCellClick = async (teacherId, teacherName, slot, currentStatus) => {
-    if (currentStatus === '不可' || currentStatus === '未提出') return;
+    if (currentStatus === '不可' || currentStatus === '未提出' || currentStatus === '通常授業') return;
 
     const context = resolveAssignmentContext(teacherId, slot);
     setSelectedCell({ teacherId, teacherName, slot, currentStatus, ...context });

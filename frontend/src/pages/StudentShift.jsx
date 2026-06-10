@@ -19,11 +19,12 @@ function parseDateTab(isoDate) {
 }
 
 function apiSlotsToState(slots) {
+  const normalize = (v) => (v === 'priority' ? 'regular_class' : v);
   return {
-    1: slots['1'] ?? 'blank',
-    2: slots['2'] ?? 'blank',
-    3: slots['3'] ?? 'blank',
-    4: slots['4'] ?? 'blank',
+    1: normalize(slots['1']) ?? 'blank',
+    2: normalize(slots['2']) ?? 'blank',
+    3: normalize(slots['3']) ?? 'blank',
+    4: normalize(slots['4']) ?? 'blank',
   };
 }
 
@@ -62,9 +63,9 @@ const TimeSlot = ({ period, time, status, onStatusChange, disabled }) => (
       <button
         type="button"
         disabled={disabled}
-        onClick={() => onStatusChange('priority')}
-        className={`w-11 h-10 rounded-md font-bold text-sm transition-all disabled:opacity-50 ${status === 'priority' ? 'bg-amber-500 text-white shadow-sm' : 'text-gray-400 hover:bg-gray-200'}`}
-        title="通常出勤できる"
+        onClick={() => onStatusChange('regular_class')}
+        className={`w-11 h-10 rounded-md font-bold text-sm transition-all disabled:opacity-50 ${status === 'regular_class' ? 'bg-slate-500 text-white shadow-sm' : 'text-gray-400 hover:bg-gray-200'}`}
+        title="通常授業で入れない"
       >
         ◎
       </button>
@@ -72,17 +73,17 @@ const TimeSlot = ({ period, time, status, onStatusChange, disabled }) => (
         type="button"
         disabled={disabled}
         onClick={() => onStatusChange('available')}
-        className={`w-11 h-10 rounded-md font-bold transition-all disabled:opacity-50 ${status === 'available' ? 'bg-emerald-500 text-white shadow-sm' : 'text-gray-400 hover:bg-gray-200'}`}
+        className={`w-11 h-10 rounded-md font-bold text-sm transition-all disabled:opacity-50 ${status === 'available' ? 'bg-emerald-500 text-white shadow-sm ring-2 ring-emerald-300' : 'text-gray-400 hover:bg-gray-200 border border-dashed border-gray-300'}`}
         title="空いている"
       >
-        ○
+        空
       </button>
       <button
         type="button"
         disabled={disabled}
         onClick={() => onStatusChange('unavailable')}
         className={`w-11 h-10 rounded-md font-bold transition-all disabled:opacity-50 ${status === 'unavailable' ? 'bg-red-500 text-white shadow-sm' : 'text-gray-400 hover:bg-gray-200'}`}
-        title="入れない"
+        title="無理"
       >
         ×
       </button>
@@ -260,9 +261,9 @@ export default function StudentShift() {
           </div>
 
           <div className="flex justify-center gap-4 mb-4 text-xs text-gray-500">
-            <span><span className="text-amber-600 font-bold">◎</span> 通常出勤</span>
-            <span><span className="text-emerald-600 font-bold">○</span> 空いてる</span>
-            <span><span className="text-red-500 font-bold">×</span> 入れない</span>
+            <span><span className="text-slate-600 font-bold">◎</span> 通常授業</span>
+            <span><span className="text-emerald-600 font-bold">空</span> 空いてる</span>
+            <span><span className="text-red-500 font-bold">×</span> 無理</span>
           </div>
 
           {isLoading ? (

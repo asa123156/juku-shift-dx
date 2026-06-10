@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 
 SLOTS = (1, 2, 3, 4)
-BLOCKED_TEACHER_STATUSES = frozenset({"不可"})
+BLOCKED_TEACHER_STATUSES = frozenset({"不可", "通常授業"})
 
 
 @dataclass
@@ -132,8 +132,6 @@ def score_candidate(teacher: Teacher, slot: int) -> int:
     待機・AI提案のコマは高スコア、確定済みはやや低め。
     """
     status = teacher.slots.get(slot, "")
-    if status == "◎":
-        return 98
     if status in ("待機", "AI提案"):
         return 90
     if status == "確定":

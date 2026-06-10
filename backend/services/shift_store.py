@@ -9,7 +9,7 @@ from schemas.shifts import AvailabilityStatus, ShiftStatus
 SUBMISSIONS_PATH = DATA_DIR / "teacher-submissions.json"
 
 _AVAILABILITY_TO_DASHBOARD: dict[AvailabilityStatus, ShiftStatus] = {
-    "priority": "◎",
+    "regular_class": "通常授業",
     "available": "待機",
     "unavailable": "不可",
     "blank": "未提出",
@@ -23,8 +23,8 @@ def availability_to_dashboard(status: AvailabilityStatus) -> ShiftStatus:
 
 
 def dashboard_to_availability(status: ShiftStatus) -> AvailabilityStatus:
-    if status == "◎":
-        return "priority"
+    if status == "通常授業":
+        return "regular_class"
     if status in ("待機", "確定", "AI提案"):
         return "available"
     if status == "不可":
@@ -70,7 +70,13 @@ def get_teacher_submission(teacher_id: int, date: str) -> dict[str, Availability
     raw = by_date.get(str(teacher_id))
     if raw is None:
         return None
-    return {k: v for k, v in raw.items()}  # type: ignore[misc]
+    normalized: dict[str, AvailabilityStatus] = {}
+    for k, v in raw.items():
+        if v == "priority":  # 旧値との互換
+            normalized[k] = "regular_class"
+        else:
+            normalized[k] = v  # type: ignore[assignment]
+    return normalized
 
 
 def save_teacher_submission(

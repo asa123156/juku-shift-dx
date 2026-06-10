@@ -6,7 +6,6 @@ from services.assignment_engine import (
     has_consecutive_subject,
     is_three_consecutive_for_teacher,
     rank_candidates,
-    score_candidate,
 )
 
 DATE = "2026-06-10"
@@ -53,15 +52,10 @@ def test_returns_valid_candidate() -> None:
     assert any(c["teacher_id"] == 3 for c in result)
 
 
-def test_priority_scores_higher_than_available() -> None:
-    priority_teacher = _teacher(1, "田中", {1: "◎", 2: "待機", 3: "待機", 4: "待機"})
-    available_teacher = _teacher(2, "佐藤", {1: "待機", 2: "待機", 3: "待機", 4: "待機"})
-    assert score_candidate(priority_teacher, 1) > score_candidate(available_teacher, 1)
-
-    raw = get_assignment_candidates(1, "数学I", [priority_teacher, available_teacher], [], DATE)
-    ranked = rank_candidates(raw, [priority_teacher, available_teacher])
-    top = next(c for c in ranked if c["slot"] == 1)
-    assert top["teacher_id"] == 1
+def test_rejects_regular_class_slot() -> None:
+    teachers = [_teacher(1, "田中", {1: "通常授業", 2: "待機", 3: "待機", 4: "待機"})]
+    result = get_assignment_candidates(1, "数学I", teachers, [], DATE)
+    assert all(not (c["teacher_id"] == 1 and c["slot"] == 1) for c in result)
 
 
 def run_tests() -> None:
@@ -69,7 +63,7 @@ def run_tests() -> None:
     test_rejects_consecutive_same_subject()
     test_rejects_three_consecutive_teacher_slots()
     test_returns_valid_candidate()
-    test_priority_scores_higher_than_available()
+    test_rejects_regular_class_slot()
     print("Assignment engine tests passed.")
 
 
