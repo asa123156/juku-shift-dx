@@ -2,12 +2,22 @@ import json
 from datetime import date, timedelta
 
 from fastapi import HTTPException
+from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 from config import DATA_DIR
+from database import SessionLocal
+from models import AppSetting, Period as PeriodRow
 from schemas.period import Period, PeriodStatus, empty_slots
 
 PERIODS_PATH = DATA_DIR / "periods.json"
 BASES_PATH = DATA_DIR / "period-bases.json"
+
+ACTIVE_PERIOD_KEY = "active_period_id"
+
+
+def _session() -> Session:
+    return SessionLocal()
 
 
 def _read_json(path) -> dict:
@@ -26,6 +36,34 @@ def _write_json(path, data: dict) -> None:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
 
+def _to_schema(row: PeriodRow) -> Period:
+    return Period(
+        id=row.id,
+        name=row.name,
+        start_date=row.start_date.isoformat(),
+        end_date=row.end_date.isoformat(),
+        status=row.status,
+    )
+
+
+def _get_active_period_id(db: Session) -> int | None:
+    row = db.get(AppSetting, ACTIVE_PERIOD_KEY)
+    if row is None:
+        return None
+    try:
+        return int(row.value)
+    except ValueError:
+        return None
+
+
+def _set_active_period_id(db: Session, period_id: int) -> None:
+    row = db.get(AppSetting, ACTIVE_PERIOD_KEY)
+    if row is None:
+        db.add(AppSetting(key=ACTIVE_PERIOD_KEY, value=str(period_id)))
+    else:
+        row.value = str(period_id)
+
+
 def iter_dates(start: str, end: str) -> list[str]:
     current = date.fromisoformat(start)
     last = date.fromisoformat(end)
@@ -37,34 +75,44 @@ def iter_dates(start: str, end: str) -> list[str]:
 
 
 def list_periods() -> tuple[list[Period], int | None]:
-    store = _read_json(PERIODS_PATH)
-    items = [Period.model_validate(p) for p in store.get("items", [])]
-    return items, store.get("active_period_id")
+    with _session() as db:
+        rows = db.scalars(select(PeriodRow).order_by(PeriodRow.id)).all()
+        return [_to_schema(row) for row in rows], _get_active_period_id(db)
 
 
 def get_period(period_id: int) -> Period:
-    for period in list_periods()[0]:
-        if period.id == period_id:
-            return period
-    raise HTTPException(status_code=404, detail=f"Period id={period_id} not found")
+    with _session() as db:
+        row = db.get(PeriodRow, period_id)
+        if row is None:
+            raise HTTPException(status_code=404, detail=f"Period id={period_id} not found")
+        return _to_schema(row)
 
 
 def find_period_for_date(iso_date: str) -> Period | None:
-    for period in list_periods()[0]:
-        if period.start_date <= iso_date <= period.end_date:
-            return period
+    target = date.fromisoformat(iso_date)
+    with _session() as db:
+        rows = db.scalars(select(PeriodRow)).all()
+        for row in rows:
+            if row.start_date <= target <= row.end_date:
+                return _to_schema(row)
     return None
 
 
 def create_period(name: str, start_date: str, end_date: str) -> Period:
-    store = _read_json(PERIODS_PATH)
-    next_id = int(store.get("next_id", 1))
-    period = Period(id=next_id, name=name, start_date=start_date, end_date=end_date, status="DRAFT")
-    store.setdefault("items", []).append(period.model_dump())
-    store["next_id"] = next_id + 1
-    store["active_period_id"] = next_id
-    _write_json(PERIODS_PATH, store)
-    _init_period_bases(next_id, start_date, end_date)
+    with _session() as db:
+        row = PeriodRow(
+            name=name,
+            start_date=date.fromisoformat(start_date),
+            end_date=date.fromisoformat(end_date),
+            status="DRAFT",
+        )
+        db.add(row)
+        db.flush()
+        _set_active_period_id(db, row.id)
+        db.commit()
+        db.refresh(row)
+        period = _to_schema(row)
+    _init_period_bases(period.id, start_date, end_date)
     return period
 
 
@@ -80,17 +128,56 @@ def _init_period_bases(period_id: int, start_date: str, end_date: str) -> None:
 
 
 def update_period_status(period_id: int, status: PeriodStatus) -> Period:
-    store = _read_json(PERIODS_PATH)
-    updated: Period | None = None
-    for raw in store.get("items", []):
-        if raw["id"] == period_id:
-            raw["status"] = status
-            updated = Period.model_validate(raw)
-            break
-    if updated is None:
-        raise HTTPException(status_code=404, detail=f"Period id={period_id} not found")
-    _write_json(PERIODS_PATH, store)
-    return updated
+    with _session() as db:
+        row = db.get(PeriodRow, period_id)
+        if row is None:
+            raise HTTPException(status_code=404, detail=f"Period id={period_id} not found")
+        row.status = status
+        db.commit()
+        db.refresh(row)
+        return _to_schema(row)
+
+
+def seed_periods_if_empty() -> None:
+    """DB が空のとき periods.json から初期データを投入する。"""
+    with _session() as db:
+        if db.scalar(select(PeriodRow.id).limit(1)) is not None:
+            return
+        store = _read_json(PERIODS_PATH)
+        items = store.get("items", [])
+        if not items:
+            return
+        json_id_to_db_id: dict[int, int] = {}
+        for raw in items:
+            row = PeriodRow(
+                name=raw["name"],
+                start_date=date.fromisoformat(raw["start_date"]),
+                end_date=date.fromisoformat(raw["end_date"]),
+                status=raw["status"],
+            )
+            db.add(row)
+            db.flush()
+            json_id_to_db_id[int(raw["id"])] = row.id
+        active_id = store.get("active_period_id")
+        if active_id is not None:
+            mapped = json_id_to_db_id.get(int(active_id))
+            if mapped is not None:
+                _set_active_period_id(db, mapped)
+        db.commit()
+
+
+def reset_periods_for_tests() -> None:
+    """テスト用: periods / app_settings をクリアし JSON から再投入。"""
+    from database import Base, engine
+
+    import models  # noqa: F401 — register ORM models
+
+    Base.metadata.create_all(bind=engine)
+    with _session() as db:
+        db.query(PeriodRow).delete()
+        db.query(AppSetting).delete()
+        db.commit()
+    seed_periods_if_empty()
 
 
 def get_period_base(period_id: int) -> dict:

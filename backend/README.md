@@ -64,7 +64,7 @@ pip install -r requirements.txt
 uvicorn main:app --reload
 ```
 
-現時点では **Period テーブルのみ** 定義済み。API の読み書きは引き続き JSON（`data/periods.json` 等）です。順次 DB に載せ替え予定。
+**Period CRUD** は SQLite（`periods` / `app_settings` テーブル）を使用。初回起動時に `data/periods.json` が空 DB へシードされる。period-bases 等は引き続き JSON。
 
 ## データファイル
 

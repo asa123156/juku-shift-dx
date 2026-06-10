@@ -15,12 +15,15 @@ def _reset_data() -> None:
     SUBMISSIONS.write_text("{}", encoding="utf-8")
     OVERRIDES.write_text("{}", encoding="utf-8")
     ASSIGNMENTS.write_text("{}", encoding="utf-8")
+    from services.period_store import reset_periods_for_tests
+
+    reset_periods_for_tests()
 
 
 def run_tests() -> None:
-    _reset_data()
     from main import app
 
+    _reset_data()
     client = TestClient(app)
 
     assert client.get("/health").json()["status"] == "ok"

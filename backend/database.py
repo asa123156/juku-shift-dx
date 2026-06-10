@@ -29,3 +29,6 @@ def init_db() -> None:
     import models  # noqa: F401 — register ORM models with Base.metadata
 
     Base.metadata.create_all(bind=engine)
+    from services.period_store import seed_periods_if_empty
+
+    seed_periods_if_empty()

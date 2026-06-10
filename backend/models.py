@@ -6,6 +6,15 @@ from sqlalchemy.orm import Mapped, mapped_column
 from database import Base
 
 
+class AppSetting(Base):
+    """アプリ全体のキー・値設定（active_period_id など）"""
+
+    __tablename__ = "app_settings"
+
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    value: Mapped[str] = mapped_column(String(255), nullable=False)
+
+
 class Period(Base):
     """募集期間（DRAFT → COLLECTING → FINALIZED）"""
 
