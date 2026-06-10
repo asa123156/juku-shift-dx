@@ -51,6 +51,26 @@ class PeriodBaseSlot(Base):
     symbol: Mapped[str] = mapped_column(String(2), nullable=False, default="")
 
 
+class AdminOverride(Base):
+    """教室長によるコマ上書き（確定・AI提案 等）"""
+
+    __tablename__ = "admin_overrides"
+    __table_args__ = (
+        UniqueConstraint(
+            "teacher_id",
+            "slot_date",
+            "slot_key",
+            name="uq_admin_override",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    teacher_id: Mapped[int] = mapped_column(nullable=False, index=True)
+    slot_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    slot_key: Mapped[str] = mapped_column(String(1), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False)
+
+
 class ShiftSubmission(Base):
     """講師・生徒のシフト提出（日付 × コマ）"""
 
