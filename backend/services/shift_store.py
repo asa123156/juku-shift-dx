@@ -22,7 +22,7 @@ def availability_to_dashboard(status: AvailabilityStatus) -> ShiftStatus:
 
 
 def dashboard_to_availability(status: ShiftStatus) -> AvailabilityStatus:
-    if status in ("待機", "確定"):
+    if status in ("待機", "確定", "AI提案"):
         return "available"
     if status == "不可":
         return "unavailable"

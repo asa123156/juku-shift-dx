@@ -5,13 +5,16 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-SUBMISSIONS = Path(__file__).resolve().parent.parent / "data" / "teacher-submissions.json"
-OVERRIDES = Path(__file__).resolve().parent.parent / "data" / "admin-overrides.json"
+DATA_DIR = Path(__file__).resolve().parent.parent / "data"
+SUBMISSIONS = DATA_DIR / "teacher-submissions.json"
+OVERRIDES = DATA_DIR / "admin-overrides.json"
+ASSIGNMENTS = DATA_DIR / "assignments.json"
 
 
 def _reset_data() -> None:
     SUBMISSIONS.write_text("{}", encoding="utf-8")
     OVERRIDES.write_text("{}", encoding="utf-8")
+    ASSIGNMENTS.write_text("{}", encoding="utf-8")
 
 
 def run_tests() -> None:
@@ -65,6 +68,22 @@ def run_tests() -> None:
     assert len(lessons) >= 1
 
     assert client.get("/api/shifts", params={"date": "1999-01-01"}).status_code == 404
+
+    candidates = client.post(
+        "/api/admin/assignments/candidates",
+        json={"date": "2026-06-10", "student_id": 1, "subject": "数学I"},
+    )
+    assert candidates.status_code == 200
+    assert isinstance(candidates.json()["candidates"], list)
+
+    auto = client.post("/api/admin/auto-assign", json={"date": "2026-06-10"})
+    assert auto.status_code == 200
+    body = auto.json()
+    assert "proposals" in body
+    if body["proposals"]:
+        dash = body["dashboard"]
+        statuses = [t["s1"] for t in dash["teachers"]] + [t["s2"] for t in dash["teachers"]]
+        assert "AI提案" in statuses or len(body["proposals"]) == 0
 
     print("All tests passed.")
 

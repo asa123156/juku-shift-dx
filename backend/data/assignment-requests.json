@@ -1,0 +1,22 @@
+{
+  "2026-06-10": [],
+  "2026-06-11": [
+    {
+      "student_id": 1,
+      "student_name": "近大太郎",
+      "subject": "数学I"
+    },
+    {
+      "student_id": 3,
+      "student_name": "近大次郎",
+      "subject": "国語"
+    }
+  ],
+  "2026-06-12": [
+    {
+      "student_id": 2,
+      "student_name": "山田花子",
+      "subject": "数学I"
+    }
+  ]
+}

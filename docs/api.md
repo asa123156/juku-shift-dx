@@ -29,6 +29,16 @@ Swagger: http://127.0.0.1:8000/docs
 |----------|------|------|
 | PATCH | `/api/admin/shifts/slot` | コマのステータスを直接変更 |
 | POST | `/api/admin/shifts/confirm` | 当日の「待機」→「確定」 |
+| POST | `/api/admin/assignments/candidates` | 自動割当候補の取得（NGルール適用後） |
+| POST | `/api/admin/auto-assign` | 未割当リクエストの一括自動割当 |
+
+### 自動割当ルール
+
+1. 講師コマが「不可」→ 候補から除外
+2. 生徒が同科目を隣接コマで連続受講 → 除外
+3. 講師が3コマ連続担当になる → 除外
+
+割当成功時、該当コマはダッシュボード上 **「AI提案」** になる。
 
 ## 授業コマ割り
 

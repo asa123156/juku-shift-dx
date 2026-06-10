@@ -24,6 +24,7 @@ uvicorn main:app --reload
 
 ```bash
 python -m tests.test_api
+python -m tests.test_assignment_engine
 ```
 
 ## エンドポイント一覧
@@ -39,6 +40,8 @@ python -m tests.test_api
 | PATCH | `/api/shifts` | 講師1コマ更新 |
 | PATCH | `/api/admin/shifts/slot` | 教室長がコマ変更 |
 | POST | `/api/admin/shifts/confirm` | 待機→一括確定 |
+| POST | `/api/admin/assignments/candidates` | 割当候補一覧 |
+| POST | `/api/admin/auto-assign` | AI自動割当実行 |
 | GET | `/api/lessons` | 授業コマ割り |
 
 仕様詳細: [docs/api.md](../docs/api.md)

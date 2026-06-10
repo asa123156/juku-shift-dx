@@ -2,7 +2,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
-ShiftStatus = Literal["確定", "待機", "不可", "不足", "未提出"]
+ShiftStatus = Literal["確定", "待機", "不可", "不足", "未提出", "AI提案"]
 AvailabilityStatus = Literal["available", "unavailable", "blank"]
 
 

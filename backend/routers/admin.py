@@ -5,8 +5,22 @@ from schemas.admin import (
     AdminConfirmResponse,
     AdminSlotUpdateRequest,
 )
+from schemas.assignment import (
+    AssignmentCandidatesRequest,
+    AssignmentCandidatesResponse,
+    AssignmentCandidate,
+    AutoAssignRequest,
+    AutoAssignResponse,
+)
 from schemas.shifts import ShiftDashboardResponse
 from services.admin_store import confirm_all_pending, set_slot_status
+from services.assignment_engine import (
+    get_assignment_candidates,
+    rank_candidates,
+    teachers_from_dashboard,
+)
+from services.assignment_store import get_assignments_for_date
+from services.auto_assign import run_auto_assign
 from services.dashboard_builder import build_shift_dashboard, build_shift_dashboard_base_only
 from services.data_loader import resolve_shift_date
 from services.shift_store import ensure_teacher_exists
@@ -36,4 +50,47 @@ def admin_confirm_shifts(body: AdminConfirmRequest) -> AdminConfirmResponse:
         confirmed_slots=changed,
         message=f"{changed} コマを確定しました",
         dashboard=dashboard,
+    )
+
+
+@router.post("/assignments/candidates", response_model=AssignmentCandidatesResponse)
+def list_assignment_candidates(body: AssignmentCandidatesRequest) -> AssignmentCandidatesResponse:
+    """指定生徒・科目に対する割当候補（NGルール適用後）を返す"""
+    resolve_shift_date(body.date)
+    dashboard = build_shift_dashboard(body.date)
+    teacher_list = teachers_from_dashboard(dashboard)
+    current_assignments = get_assignments_for_date(body.date)
+
+    raw = get_assignment_candidates(
+        student_id=body.student_id,
+        subject=body.subject,
+        teacher_list=teacher_list,
+        current_assignments=current_assignments,
+        date=body.date,
+    )
+    ranked = rank_candidates(raw, teacher_list)
+    candidates = [AssignmentCandidate.model_validate(c) for c in ranked]
+
+    return AssignmentCandidatesResponse(
+        date=body.date,
+        student_id=body.student_id,
+        subject=body.subject,
+        candidates=candidates,
+    )
+
+
+@router.post("/auto-assign", response_model=AutoAssignResponse)
+def auto_assign(body: AutoAssignRequest) -> AutoAssignResponse:
+    """
+    未割当リクエストに対して自動割当を実行する。
+    割当コマはダッシュボード上「AI提案」として反映される。
+    """
+    resolve_shift_date(body.date)
+    proposals, assignments, dashboard = run_auto_assign(body.date)
+    return AutoAssignResponse(
+        date=body.date,
+        message=f"{len(proposals)} 件の自動割当を提案しました",
+        proposals=proposals,
+        assignments=assignments,
+        dashboard=ShiftDashboardResponse.model_validate(dashboard),
     )
