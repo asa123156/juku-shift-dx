@@ -1,7 +1,8 @@
 from copy import deepcopy
 
 from services.admin_store import apply_admin_overrides
-from services.data_loader import load_shift_dashboard_base, resolve_shift_date
+from services.data_loader import resolve_shift_date
+from services.dashboard_store import load_shift_dashboard_base
 from services.shift_store import apply_teacher_submissions, compute_metrics
 
 

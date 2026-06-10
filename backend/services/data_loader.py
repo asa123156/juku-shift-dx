@@ -3,7 +3,8 @@ from pathlib import Path
 
 from fastapi import HTTPException
 
-from config import DASHBOARDS_DIR, DATA_DIR, DEFAULT_SHIFT_DATE, REPO_ROOT
+from config import DATA_DIR, REPO_ROOT
+from services.dashboard_store import list_shift_dates
 
 
 def _read_json(path: Path) -> object:
@@ -16,13 +17,9 @@ def _read_json(path: Path) -> object:
         return json.load(f)
 
 
-def list_shift_dates() -> list[str]:
-    if not DASHBOARDS_DIR.is_dir():
-        return []
-    return sorted(p.stem for p in DASHBOARDS_DIR.glob("*.json"))
-
-
 def resolve_shift_date(date: str | None) -> str:
+    from config import DEFAULT_SHIFT_DATE
+
     dates = list_shift_dates()
     if not dates:
         raise HTTPException(status_code=500, detail="No shift dashboard data configured")
@@ -34,17 +31,6 @@ def resolve_shift_date(date: str | None) -> str:
             detail=f"No shift dashboard for date={date}. Available: {', '.join(dates)}",
         )
     return date
-
-
-def load_shift_dashboard_base(date: str) -> dict:
-    path = DASHBOARDS_DIR / f"{date}.json"
-    data = _read_json(path)
-    if data.get("date") != date:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Dashboard file date mismatch: expected {date}",
-        )
-    return data
 
 
 def load_users() -> list[dict]:

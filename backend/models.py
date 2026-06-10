@@ -1,6 +1,6 @@
 from datetime import date
 
-from sqlalchemy import Date, ForeignKey, String, UniqueConstraint
+from sqlalchemy import JSON, Date, ForeignKey, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from database import Base
@@ -126,3 +126,14 @@ class AssignmentRequest(Base):
     student_id: Mapped[int] = mapped_column(nullable=False)
     student_name: Mapped[str] = mapped_column(String(255), nullable=False)
     subject: Mapped[str] = mapped_column(String(255), nullable=False)
+
+
+class ShiftDashboard(Base):
+    """日別シフトダッシュボードのベースデータ"""
+
+    __tablename__ = "shift_dashboards"
+
+    slot_date: Mapped[date] = mapped_column(Date, primary_key=True)
+    display_date: Mapped[str] = mapped_column(String(255), nullable=False)
+    time_slots: Mapped[list] = mapped_column(JSON, nullable=False)
+    teachers: Mapped[list] = mapped_column(JSON, nullable=False)

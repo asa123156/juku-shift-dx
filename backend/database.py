@@ -31,6 +31,7 @@ def init_db() -> None:
     Base.metadata.create_all(bind=engine)
     from services.admin_store import seed_admin_overrides_if_empty
     from services.assignment_store import seed_assignment_requests_if_empty, seed_assignments_if_empty
+    from services.dashboard_store import seed_shift_dashboards_if_empty
     from services.period_store import seed_period_bases_if_empty, seed_periods_if_empty
     from services.submission_store import seed_shift_submissions_if_empty
 
@@ -40,3 +41,4 @@ def init_db() -> None:
     seed_admin_overrides_if_empty()
     seed_assignments_if_empty()
     seed_assignment_requests_if_empty()
+    seed_shift_dashboards_if_empty()

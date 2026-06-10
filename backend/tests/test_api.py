@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 def _reset_data() -> None:
     from services.admin_store import reset_admin_overrides_for_tests
     from services.assignment_store import reset_assignments_for_tests
+    from services.dashboard_store import reset_shift_dashboards_for_tests
     from services.period_store import reset_periods_for_tests
     from services.submission_store import reset_submissions_for_tests
 
@@ -13,6 +14,7 @@ def _reset_data() -> None:
     reset_submissions_for_tests()
     reset_admin_overrides_for_tests()
     reset_assignments_for_tests()
+    reset_shift_dashboards_for_tests()
 
 
 def run_tests() -> None:
