@@ -12,7 +12,8 @@ from schemas.shifts import (
     ShiftSubmitResponse,
     TeacherShiftSubmissionResponse,
 )
-from services.dashboard_builder import build_shift_dashboard, build_shift_dashboard_base_only
+from services.availability_dashboard import build_availability_dashboard
+from services.dashboard_builder import build_shift_dashboard_base_only
 from services.data_loader import list_shift_dates, resolve_shift_date
 from services.period_store import find_period_for_date
 from services.schedule_service import bulk_save_submissions, build_my_schedule
@@ -59,7 +60,8 @@ def list_teachers(
 def get_shifts(
     date: Annotated[str | None, Query(description="対象日（YYYY-MM-DD）。省略時は既定日")] = None,
 ) -> ShiftDashboardResponse:
-    payload = build_shift_dashboard(date)
+    resolved = resolve_shift_date(date)
+    payload = build_availability_dashboard(resolved)
     return ShiftDashboardResponse.model_validate(payload)
 
 

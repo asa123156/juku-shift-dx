@@ -10,10 +10,10 @@ import {
 
 const WEEKDAYS = ['日', '月', '火', '水', '木', '金', '土'];
 const DEFAULT_TIME_SLOTS = [
-  { slot: 1, start: '13:00', end: '14:20' },
-  { slot: 2, start: '14:30', end: '15:50' },
-  { slot: 3, start: '16:00', end: '17:20' },
-  { slot: 4, start: '17:30', end: '18:50' },
+  { slot: 1, start: '13:30', end: '14:50' },
+  { slot: 2, start: '15:00', end: '16:20' },
+  { slot: 3, start: '16:30', end: '17:50' },
+  { slot: 4, start: '18:00', end: '19:20' },
 ];
 
 function parseDateTab(isoDate) {

@@ -182,6 +182,17 @@ def add_assignment(record: AssignmentRecord) -> None:
         db.commit()
 
 
+def remove_assignment_at_slot(iso_date: str, teacher_id: int, slot: int) -> None:
+    target_date = date.fromisoformat(iso_date)
+    with _session() as db:
+        db.query(AssignmentRow).filter(
+            AssignmentRow.slot_date == target_date,
+            AssignmentRow.teacher_id == teacher_id,
+            AssignmentRow.slot == slot,
+        ).delete(synchronize_session=False)
+        db.commit()
+
+
 def clear_requests_fulfilled(iso_date: str, fulfilled_student_ids: set[int]) -> None:
     if not fulfilled_student_ids:
         return

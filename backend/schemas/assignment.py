@@ -1,7 +1,5 @@
 from pydantic import BaseModel, Field
 
-from schemas.shifts import ShiftDashboardResponse
-
 
 class AssignmentRecord(BaseModel):
     date: str
@@ -52,7 +50,7 @@ class AutoAssignResponse(BaseModel):
     message: str
     proposals: list[AutoAssignProposal]
     assignments: list[AssignmentRecord]
-    dashboard: ShiftDashboardResponse
+    grid: AssignmentGridResponse
 
 
 class AssignmentRequestItem(BaseModel):
@@ -66,3 +64,34 @@ class ImportAssignmentRequestsResponse(BaseModel):
     skipped_count: int = Field(ge=0)
     by_date: dict[str, int] = Field(description="日付ごとの追加件数")
     message: str
+
+
+class ManualAssignRequest(BaseModel):
+    date: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
+    student_id: int = Field(ge=1)
+    student_name: str = Field(min_length=1)
+    subject: str = Field(min_length=1)
+    teacher_id: int = Field(ge=1)
+    slot: int = Field(ge=1, le=4)
+
+
+class AssignmentGridSlot(BaseModel):
+    slot: int
+    availability: str
+    assignable: bool
+    assignment: AssignmentRecord | None = None
+
+
+class AssignmentGridTeacher(BaseModel):
+    id: int
+    name: str
+    color: str = ""
+    slots: list[AssignmentGridSlot]
+
+
+class AssignmentGridResponse(BaseModel):
+    date: str
+    time_slots: list
+    teachers: list[AssignmentGridTeacher]
+    assignments: list[AssignmentRecord]
+    pending_requests: list[AssignmentRequestItem]

@@ -82,6 +82,7 @@ class ScheduleDay(BaseModel):
     slots: dict[str, SlotSymbol]
     locked_slots: dict[str, bool] = Field(description="◎ 固定枠は true")
     readonly: bool = False
+    confirmed_lessons: list[dict] = Field(default_factory=list, description="確定後の割当（生徒向け）")
 
 
 class MyScheduleResponse(BaseModel):
@@ -91,6 +92,8 @@ class MyScheduleResponse(BaseModel):
     period_name: str
     period_status: PeriodStatus
     readonly: bool
+    time_slots: list[dict] = Field(default_factory=list)
+    message: str | None = None
     dates: list[ScheduleDay]
 
 

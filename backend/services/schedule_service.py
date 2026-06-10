@@ -1,6 +1,7 @@
 from fastapi import HTTPException
 
 from schemas.period import PeriodStatus, ScheduleDay, SlotSymbol, empty_slots
+from services.assignment_store import get_assignments_for_date
 from services.period_store import (
     find_period_for_date,
     get_entity_base_day,
@@ -8,7 +9,25 @@ from services.period_store import (
     iter_dates,
 )
 from services.shift_store import get_teacher_submission, save_teacher_bulk
+from services.slot_timing import generate_time_slots
 from services.student_store import get_student_submission, save_student_bulk
+
+
+def _confirmed_lessons(student_id: int, iso_date: str, finalized: bool) -> list[dict]:
+    if not finalized:
+        return []
+    lessons = []
+    for row in get_assignments_for_date(iso_date):
+        if row["student_id"] != student_id:
+            continue
+        lessons.append(
+            {
+                "slot": row["slot"],
+                "teacher_name": row["teacher_name"],
+                "subject": row["subject"],
+            }
+        )
+    return sorted(lessons, key=lambda x: x["slot"])
 
 
 def _merge_day(
@@ -17,6 +36,7 @@ def _merge_day(
     period_id: int,
     iso_date: str,
     readonly: bool,
+    period_status: PeriodStatus,
 ) -> ScheduleDay:
     base = get_entity_base_day(period_id, role, entity_id, iso_date)
     if role == "teacher":
@@ -24,20 +44,52 @@ def _merge_day(
     else:
         submitted = get_student_submission(entity_id, iso_date)
 
+    show_fixed = period_status == "FINALIZED"
     merged: dict[str, SlotSymbol] = empty_slots()
     locked: dict[str, bool] = {}
     for key in ("1", "2", "3", "4"):
-        if base[key] == "◎":
+        if show_fixed and base[key] == "◎":
             merged[key] = "◎"
             locked[key] = True
         elif submitted is not None:
             merged[key] = submitted[key]
             locked[key] = False
         else:
-            merged[key] = base[key]
+            merged[key] = base[key] if show_fixed else ""
             locked[key] = False
 
-    return ScheduleDay(date=iso_date, slots=merged, locked_slots=locked, readonly=readonly)
+    confirmed = _confirmed_lessons(entity_id, iso_date, finalized=show_fixed and role == "student")
+    return ScheduleDay(
+        date=iso_date,
+        slots=merged,
+        locked_slots=locked,
+        readonly=readonly,
+        confirmed_lessons=confirmed,
+    )
+
+
+def build_merged_slots_for_export(
+    role: str,
+    entity_id: int,
+    period_id: int,
+    iso_date: str,
+) -> dict[str, SlotSymbol]:
+    period = get_period(period_id)
+    base = get_entity_base_day(period_id, role, entity_id, iso_date)
+    if role == "teacher":
+        submitted = get_teacher_submission(entity_id, iso_date)
+    else:
+        submitted = get_student_submission(entity_id, iso_date)
+
+    merged: dict[str, SlotSymbol] = empty_slots()
+    for key in ("1", "2", "3", "4"):
+        if period.status == "FINALIZED" and base[key] == "◎":
+            merged[key] = "◎"
+        elif submitted is not None:
+            merged[key] = submitted[key]
+        else:
+            merged[key] = ""
+    return merged
 
 
 def assert_period_collecting(period_id: int) -> None:
@@ -90,9 +142,12 @@ def build_my_schedule(role: str, entity_id: int, period_id: int) -> dict:
     period = get_period(period_id)
     readonly = period.status == "FINALIZED"
     dates = [
-        _merge_day(role, entity_id, period_id, iso_date, readonly).model_dump()
+        _merge_day(role, entity_id, period_id, iso_date, readonly, period.status).model_dump()
         for iso_date in iter_dates(period.start_date, period.end_date)
     ]
+    message = None
+    if readonly and role == "student":
+        message = "シフトが確定しました。以下が確定スケジュールです。"
     return {
         "role": role,
         "entity_id": entity_id,
@@ -100,6 +155,8 @@ def build_my_schedule(role: str, entity_id: int, period_id: int) -> dict:
         "period_name": period.name,
         "period_status": period.status,
         "readonly": readonly,
+        "time_slots": generate_time_slots(),
+        "message": message,
         "dates": dates,
     }
 

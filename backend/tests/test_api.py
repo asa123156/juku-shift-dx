@@ -31,6 +31,8 @@ def run_tests() -> None:
     dash = client.get("/api/shifts", params={"date": "2026-06-11"}).json()
     assert dash["date"] == "2026-06-11"
     assert len(dash["teachers"]) == 3
+    assert len(dash.get("time_slots", [])) == 4
+    assert dash["time_slots"][0]["start"] == "13:30"
 
     login = client.post(
         "/api/auth/login",
@@ -45,13 +47,12 @@ def run_tests() -> None:
     payload = {
         "teacher_id": 1,
         "date": "2026-06-10",
-        "slots": {"1": "◎", "2": "", "3": "×", "4": ""},
+        "slots": {"1": "", "2": "", "3": "×", "4": ""},
     }
     assert client.post("/api/shifts", json=payload).status_code == 200
 
     me = client.get("/api/shifts/me", params={"teacher_id": 1, "date": "2026-06-10"}).json()
-    assert me["slots"]["1"] == "◎"
-    assert me["locked_slots"]["1"] is True
+    assert me["slots"]["3"] == "×"
 
     schedule = client.get(
         "/api/shifts/my-schedule",
@@ -59,6 +60,7 @@ def run_tests() -> None:
     ).json()
     assert schedule["period_status"] == "COLLECTING"
     assert len(schedule["dates"]) == 3
+    assert len(schedule.get("time_slots", [])) == 4
 
     bulk = client.patch(
         "/api/shifts/bulk",
@@ -67,7 +69,7 @@ def run_tests() -> None:
             "entity_id": 1,
             "period_id": 1,
             "submissions": [
-                {"date": "2026-06-10", "slots": {"1": "◎", "2": "", "3": "×", "4": ""}},
+                {"date": "2026-06-10", "slots": {"1": "", "2": "", "3": "×", "4": ""}},
                 {"date": "2026-06-11", "slots": {"1": "×", "2": "", "3": "", "4": ""}},
             ],
         },
@@ -87,24 +89,12 @@ def run_tests() -> None:
 
     merged = client.get("/api/shifts", params={"date": "2026-06-10"}).json()
     t1 = next(t for t in merged["teachers"] if t["id"] == 1)
-    assert t1["s1"] == "通常授業"
-    assert t1["s2"] == "待機"
+    assert t1["s3"] == "×"
+    assert t1["s2"] == ""
 
-    admin = client.patch(
-        "/api/admin/shifts/slot",
-        json={"date": "2026-06-10", "teacher_id": 1, "slot": 1, "status": "確定"},
-    )
-    assert admin.status_code == 200
-    assert admin.json()["teachers"][0]["s1"] == "確定"
-
-    confirm = client.post("/api/admin/shifts/confirm", json={"date": "2026-06-11"})
-    assert confirm.status_code == 200
-    assert confirm.json()["confirmed_slots"] >= 0
-
-    lessons = client.get("/api/lessons").json()
-    assert len(lessons) >= 1
-
-    assert client.get("/api/shifts", params={"date": "1999-01-01"}).status_code == 404
+    grid = client.get("/api/admin/assignments/grid", params={"date": "2026-06-10"}).json()
+    assert len(grid["teachers"]) == 3
+    assert "time_slots" in grid
 
     candidates = client.post(
         "/api/admin/assignments/candidates",
@@ -117,10 +107,26 @@ def run_tests() -> None:
     assert auto.status_code == 200
     body = auto.json()
     assert "proposals" in body
-    if body["proposals"]:
-        dash = body["dashboard"]
-        statuses = [t["s1"] for t in dash["teachers"]] + [t["s2"] for t in dash["teachers"]]
-        assert "AI提案" in statuses or len(body["proposals"]) == 0
+    assert "grid" in body
+
+    finalize = client.patch("/api/admin/periods/1/status", json={"status": "FINALIZED"})
+    assert finalize.status_code == 200
+
+    finalized_dash = client.get("/api/shifts", params={"date": "2026-06-10"}).json()
+    t1f = next(t for t in finalized_dash["teachers"] if t["id"] == 1)
+    assert t1f["s1"] == "◎"
+
+    student_schedule = client.get(
+        "/api/shifts/my-schedule",
+        params={"role": "student", "entity_id": 1, "period_id": 1},
+    ).json()
+    assert student_schedule["readonly"] is True
+    assert student_schedule.get("message")
+
+    lessons = client.get("/api/lessons").json()
+    assert len(lessons) >= 1
+
+    assert client.get("/api/shifts", params={"date": "1999-01-01"}).status_code == 404
 
     csv_body = (
         "date,student_id,student_name,subject\n"

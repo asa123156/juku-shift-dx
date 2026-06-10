@@ -1,21 +1,18 @@
 from schemas.assignment import AssignmentRecord, AutoAssignProposal
-from services.admin_store import set_slot_status
 from services.assignment_engine import pick_best_candidate, teachers_from_dashboard
+from services.assignment_grid import build_assignment_grid
 from services.assignment_store import (
     add_assignment,
     clear_requests_fulfilled,
     get_assignment_requests_for_date,
     get_assignments_for_date,
 )
-from services.dashboard_builder import build_shift_dashboard
+from services.availability_dashboard import build_availability_dashboard
 
 
 def run_auto_assign(date: str) -> tuple[list[AutoAssignProposal], list[AssignmentRecord], dict]:
-    """
-    未割当リクエストごとに候補を探索し、最適な講師×コマを割り当てる。
-    割当後は admin-overrides で該当コマを「AI提案」に更新する。
-    """
-    dashboard = build_shift_dashboard(date)
+    """未割当リクエストごとに候補を探索し、最適な講師×コマを割り当てる。"""
+    dashboard = build_availability_dashboard(date)
     teacher_list = teachers_from_dashboard(dashboard)
     current_assignments = get_assignments_for_date(date)
     requests = get_assignment_requests_for_date(date)
@@ -51,8 +48,6 @@ def run_auto_assign(date: str) -> tuple[list[AutoAssignProposal], list[Assignmen
         current_assignments.append(record.model_dump())
         fulfilled_ids.add(student_id)
 
-        set_slot_status(date, best["teacher_id"], best["slot"], "AI提案")
-
         proposals.append(
             AutoAssignProposal(
                 student_id=student_id,
@@ -69,6 +64,6 @@ def run_auto_assign(date: str) -> tuple[list[AutoAssignProposal], list[Assignmen
     if fulfilled_ids:
         clear_requests_fulfilled(date, fulfilled_ids)
 
-    updated_dashboard = build_shift_dashboard(date)
+    grid = build_assignment_grid(date)
     all_assignments = get_assignments_for_date(date)
-    return proposals, [AssignmentRecord.model_validate(a) for a in all_assignments], updated_dashboard
+    return proposals, [AssignmentRecord.model_validate(a) for a in all_assignments], grid
