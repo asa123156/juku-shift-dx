@@ -1,8 +1,11 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useAdminSession } from '../hooks/useAdminSession';
+import { clearSession } from '../utils/session';
 
 export default function AdminDashboard() {
   const navigate = useNavigate();
+  const isReady = useAdminSession();
   const [selectedDate, setSelectedDate] = useState('2026-06-10');
   const [teachers, setTeachers] = useState([]);
   const [metrics, setMetrics] = useState({ unsubmitted_teachers: 0, shortage_slots: 0 });
@@ -165,6 +168,8 @@ export default function AdminDashboard() {
     }
   };
 
+  if (!isReady) return null;
+
   return (
     <div className="min-h-screen bg-gray-50 flex font-sans relative">
       {isCalculating && (
@@ -243,7 +248,7 @@ export default function AdminDashboard() {
           <button type="button" className="w-full text-left bg-gray-800 px-4 py-3 rounded-lg font-bold">ダッシュボード</button>
           <button type="button" onClick={() => navigate('/import')} className="w-full text-left hover:bg-gray-800 px-4 py-3 rounded-lg text-gray-400 transition-colors">データインポート</button>
         </nav>
-        <button type="button" onClick={() => navigate('/')} className="text-gray-400 hover:text-white text-left text-sm">← ログアウト</button>
+        <button type="button" onClick={() => { clearSession(); navigate('/'); }} className="text-gray-400 hover:text-white text-left text-sm">← ログアウト</button>
       </div>
 
       <div className="flex-1 p-8 overflow-y-auto">

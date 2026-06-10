@@ -31,6 +31,7 @@ Swagger: http://127.0.0.1:8000/docs
 | POST | `/api/admin/shifts/confirm` | 当日の「待機」→「確定」 |
 | POST | `/api/admin/assignments/candidates` | 自動割当候補の取得（NGルール適用後） |
 | POST | `/api/admin/auto-assign` | 未割当リクエストの一括自動割当 |
+| POST | `/api/admin/assignment-requests/import` | CSV から未割当リクエストを取り込み |
 
 ### 自動割当ルール
 

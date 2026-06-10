@@ -85,6 +85,19 @@ def run_tests() -> None:
         statuses = [t["s1"] for t in dash["teachers"]] + [t["s2"] for t in dash["teachers"]]
         assert "AI提案" in statuses or len(body["proposals"]) == 0
 
+    csv_body = (
+        "date,student_id,student_name,subject\n"
+        "2026-06-11,99,テスト太郎,英語\n"
+    )
+    imported = client.post(
+        "/api/admin/assignment-requests/import",
+        files={"file": ("requests.csv", csv_body.encode("utf-8"), "text/csv")},
+    )
+    assert imported.status_code == 200
+    imp = imported.json()
+    assert imp["imported_count"] == 1
+    assert imp["by_date"]["2026-06-11"] == 1
+
     print("All tests passed.")
 
 

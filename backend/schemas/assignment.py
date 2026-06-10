@@ -53,3 +53,16 @@ class AutoAssignResponse(BaseModel):
     proposals: list[AutoAssignProposal]
     assignments: list[AssignmentRecord]
     dashboard: ShiftDashboardResponse
+
+
+class AssignmentRequestItem(BaseModel):
+    student_id: int = Field(ge=1)
+    student_name: str = Field(min_length=1)
+    subject: str = Field(min_length=1)
+
+
+class ImportAssignmentRequestsResponse(BaseModel):
+    imported_count: int = Field(ge=0)
+    skipped_count: int = Field(ge=0)
+    by_date: dict[str, int] = Field(description="日付ごとの追加件数")
+    message: str

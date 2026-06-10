@@ -54,3 +54,29 @@ def clear_requests_fulfilled(date: str, fulfilled_student_ids: set[int]) -> None
     pending = store.get(date, [])
     store[date] = [r for r in pending if r["student_id"] not in fulfilled_student_ids]
     _write_object(REQUESTS_PATH, store)
+
+
+def append_assignment_requests(date: str, requests: list[dict]) -> tuple[int, int]:
+    """リクエストを追加する。戻り値: (追加件数, スキップ件数)"""
+    store = _read_object(REQUESTS_PATH)
+    existing = store.get(date, [])
+    existing_keys = {(r["student_id"], r["subject"]) for r in existing}
+    added = 0
+    skipped = 0
+    for req in requests:
+        key = (req["student_id"], req["subject"])
+        if key in existing_keys:
+            skipped += 1
+            continue
+        existing.append(
+            {
+                "student_id": req["student_id"],
+                "student_name": req["student_name"],
+                "subject": req["subject"],
+            }
+        )
+        existing_keys.add(key)
+        added += 1
+    store[date] = existing
+    _write_object(REQUESTS_PATH, store)
+    return added, skipped

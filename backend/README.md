@@ -42,6 +42,7 @@ python -m tests.test_assignment_engine
 | POST | `/api/admin/shifts/confirm` | 待機→一括確定 |
 | POST | `/api/admin/assignments/candidates` | 割当候補一覧 |
 | POST | `/api/admin/auto-assign` | AI自動割当実行 |
+| POST | `/api/admin/assignment-requests/import` | CSV 割当リクエスト取込 |
 | GET | `/api/lessons` | 授業コマ割り |
 
 仕様詳細: [docs/api.md](../docs/api.md)

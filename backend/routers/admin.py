@@ -1,4 +1,4 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, File, HTTPException, UploadFile
 
 from schemas.admin import (
     AdminConfirmRequest,
@@ -11,6 +11,7 @@ from schemas.assignment import (
     AssignmentCandidate,
     AutoAssignRequest,
     AutoAssignResponse,
+    ImportAssignmentRequestsResponse,
 )
 from schemas.shifts import ShiftDashboardResponse
 from services.admin_store import confirm_all_pending, set_slot_status
@@ -21,6 +22,7 @@ from services.assignment_engine import (
 )
 from services.assignment_store import get_assignments_for_date
 from services.auto_assign import run_auto_assign
+from services.csv_import import import_assignment_requests_from_csv
 from services.dashboard_builder import build_shift_dashboard, build_shift_dashboard_base_only
 from services.data_loader import resolve_shift_date
 from services.shift_store import ensure_teacher_exists
@@ -93,4 +95,31 @@ def auto_assign(body: AutoAssignRequest) -> AutoAssignResponse:
         proposals=proposals,
         assignments=assignments,
         dashboard=ShiftDashboardResponse.model_validate(dashboard),
+    )
+
+
+@router.post("/assignment-requests/import", response_model=ImportAssignmentRequestsResponse)
+async def import_assignment_requests(
+    file: UploadFile = File(..., description="date,student_id,student_name,subject 形式の CSV"),
+) -> ImportAssignmentRequestsResponse:
+    """CSV から未割当リクエストを取り込む（同一 date+student+subject はスキップ）"""
+    if not file.filename or not file.filename.lower().endswith(".csv"):
+        raise HTTPException(status_code=400, detail="CSV ファイルを指定してください")
+
+    raw = await file.read()
+    for encoding in ("utf-8-sig", "utf-8", "cp932"):
+        try:
+            content = raw.decode(encoding)
+            break
+        except UnicodeDecodeError:
+            content = None
+    if content is None:
+        raise HTTPException(status_code=400, detail="CSV の文字コードを判別できません")
+
+    imported, skipped, by_date = import_assignment_requests_from_csv(content)
+    return ImportAssignmentRequestsResponse(
+        imported_count=imported,
+        skipped_count=skipped,
+        by_date=by_date,
+        message=f"{imported} 件を取り込みました（重複 {skipped} 件スキップ）",
     )
