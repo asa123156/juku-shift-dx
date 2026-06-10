@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from config import DATA_DIR
 from database import SessionLocal
-from models import AppSetting, Period as PeriodRow
+from models import AppSetting, PeriodBaseSlot, Period as PeriodRow
 from schemas.period import Period, PeriodStatus, empty_slots
 
 PERIODS_PATH = DATA_DIR / "periods.json"
@@ -28,12 +28,6 @@ def _read_json(path) -> dict:
     if not isinstance(data, dict):
         raise HTTPException(status_code=500, detail=f"{path.name} must be a JSON object")
     return data
-
-
-def _write_json(path, data: dict) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
 
 
 def _to_schema(row: PeriodRow) -> Period:
@@ -112,19 +106,7 @@ def create_period(name: str, start_date: str, end_date: str) -> Period:
         db.commit()
         db.refresh(row)
         period = _to_schema(row)
-    _init_period_bases(period.id, start_date, end_date)
     return period
-
-
-def _init_period_bases(period_id: int, start_date: str, end_date: str) -> None:
-    bases = _read_json(BASES_PATH)
-    dates = iter_dates(start_date, end_date)
-    bases[str(period_id)] = {
-        "teachers": {},
-        "students": {},
-        "_dates_initialized": dates,
-    }
-    _write_json(BASES_PATH, bases)
 
 
 def update_period_status(period_id: int, status: PeriodStatus) -> Period:
@@ -166,6 +148,53 @@ def seed_periods_if_empty() -> None:
         db.commit()
 
 
+def _import_bases_from_json(db: Session, raw: dict) -> None:
+    role_map = {"teachers": "teacher", "students": "student"}
+    for json_key, period_data in raw.items():
+        if not json_key.isdigit():
+            continue
+        period_id = int(json_key)
+        if db.get(PeriodRow, period_id) is None:
+            continue
+        for role_key, entities in period_data.items():
+            role = role_map.get(role_key)
+            if role is None or not isinstance(entities, dict):
+                continue
+            for entity_key, days in entities.items():
+                if not entity_key.isdigit() or not isinstance(days, dict):
+                    continue
+                entity_id = int(entity_key)
+                for iso_date, slots in days.items():
+                    if not isinstance(slots, dict):
+                        continue
+                    slot_date = date.fromisoformat(iso_date)
+                    for slot_key, symbol in slots.items():
+                        if slot_key not in ("1", "2", "3", "4") or not symbol:
+                            continue
+                        db.add(
+                            PeriodBaseSlot(
+                                period_id=period_id,
+                                role=role,
+                                entity_id=entity_id,
+                                slot_date=slot_date,
+                                slot_key=slot_key,
+                                symbol=symbol,
+                            )
+                        )
+
+
+def seed_period_bases_if_empty() -> None:
+    """DB が空のとき period-bases.json から ◎ 固定枠を投入する。"""
+    with _session() as db:
+        if db.scalar(select(PeriodBaseSlot.id).limit(1)) is not None:
+            return
+        raw = _read_json(BASES_PATH)
+        if not raw:
+            return
+        _import_bases_from_json(db, raw)
+        db.commit()
+
+
 def reset_periods_for_tests() -> None:
     """テスト用: periods / app_settings をクリアし JSON から再投入。"""
     from database import Base, engine
@@ -174,15 +203,12 @@ def reset_periods_for_tests() -> None:
 
     Base.metadata.create_all(bind=engine)
     with _session() as db:
+        db.query(PeriodBaseSlot).delete()
         db.query(PeriodRow).delete()
         db.query(AppSetting).delete()
         db.commit()
     seed_periods_if_empty()
-
-
-def get_period_base(period_id: int) -> dict:
-    bases = _read_json(BASES_PATH)
-    return bases.get(str(period_id), {"teachers": {}, "students": {}})
+    seed_period_bases_if_empty()
 
 
 def set_period_base_slot(
@@ -193,25 +219,48 @@ def set_period_base_slot(
     slot: str,
     symbol: str,
 ) -> None:
-    bases = _read_json(BASES_PATH)
-    period_key = str(period_id)
-    if period_key not in bases:
-        raise HTTPException(status_code=404, detail=f"Period base id={period_id} not found")
-    role_key = "teachers" if role == "teacher" else "students"
-    entity_key = str(entity_id)
-    period_data = bases[period_key]
-    period_data.setdefault(role_key, {})
-    period_data[role_key].setdefault(entity_key, {})
-    period_data[role_key][entity_key].setdefault(iso_date, empty_slots())
-    period_data[role_key][entity_key][iso_date][slot] = symbol
-    _write_json(BASES_PATH, bases)
+    with _session() as db:
+        if db.get(PeriodRow, period_id) is None:
+            raise HTTPException(status_code=404, detail=f"Period id={period_id} not found")
+        target_date = date.fromisoformat(iso_date)
+        existing = db.scalars(
+            select(PeriodBaseSlot).where(
+                PeriodBaseSlot.period_id == period_id,
+                PeriodBaseSlot.role == role,
+                PeriodBaseSlot.entity_id == entity_id,
+                PeriodBaseSlot.slot_date == target_date,
+                PeriodBaseSlot.slot_key == slot,
+            )
+        ).first()
+        if existing is not None:
+            existing.symbol = symbol
+        else:
+            db.add(
+                PeriodBaseSlot(
+                    period_id=period_id,
+                    role=role,
+                    entity_id=entity_id,
+                    slot_date=target_date,
+                    slot_key=slot,
+                    symbol=symbol,
+                )
+            )
+        db.commit()
 
 
 def get_entity_base_day(period_id: int, role: str, entity_id: int, iso_date: str) -> dict[str, str]:
-    base = get_period_base(period_id)
-    role_key = "teachers" if role == "teacher" else "students"
-    entity = base.get(role_key, {}).get(str(entity_id), {})
-    day = entity.get(iso_date)
-    if day:
-        return {**empty_slots(), **day}
-    return empty_slots()
+    target_date = date.fromisoformat(iso_date)
+    with _session() as db:
+        rows = db.scalars(
+            select(PeriodBaseSlot).where(
+                PeriodBaseSlot.period_id == period_id,
+                PeriodBaseSlot.role == role,
+                PeriodBaseSlot.entity_id == entity_id,
+                PeriodBaseSlot.slot_date == target_date,
+            )
+        ).all()
+    result = empty_slots()
+    for row in rows:
+        if row.slot_key in result:
+            result[row.slot_key] = row.symbol
+    return result
