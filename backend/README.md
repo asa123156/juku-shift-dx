@@ -64,7 +64,7 @@ pip install -r requirements.txt
 uvicorn main:app --reload
 ```
 
-**Period CRUD** と **period-bases（◎ 固定枠）** は SQLite を使用。初回起動時に `data/periods.json` / `data/period-bases.json` が空 DB へシードされる。提出データ等は引き続き JSON。
+**Period CRUD**、**period-bases（◎ 固定枠）**、**teacher/student submissions** は SQLite を使用。初回起動時に `data/*.json` が空 DB へシードされる。admin-overrides 等は引き続き JSON。
 
 ## データファイル
 

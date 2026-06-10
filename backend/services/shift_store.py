@@ -1,13 +1,10 @@
-import json
 from copy import deepcopy
 
 from fastapi import HTTPException
 
-from config import DATA_DIR
 from schemas.period import SlotSymbol, empty_slots
 from schemas.shifts import ShiftStatus
-
-SUBMISSIONS_PATH = DATA_DIR / "teacher-submissions.json"
+from services.submission_store import get_entity_day, get_submissions_for_date, upsert_entity_day
 
 SYMBOL_TO_DASHBOARD: dict[SlotSymbol, ShiftStatus] = {
     "◎": "通常授業",
@@ -54,22 +51,6 @@ def compute_metrics(teachers: list[dict]) -> dict[str, int]:
     }
 
 
-def _load_submissions_file() -> dict[str, dict[str, dict[str, str]]]:
-    if not SUBMISSIONS_PATH.is_file():
-        return {}
-    with SUBMISSIONS_PATH.open(encoding="utf-8") as f:
-        data = json.load(f)
-    if not isinstance(data, dict):
-        raise HTTPException(status_code=500, detail="teacher-submissions.json must be an object")
-    return data
-
-
-def _write_submissions_file(data: dict[str, dict[str, dict[str, str]]]) -> None:
-    SUBMISSIONS_PATH.parent.mkdir(parents=True, exist_ok=True)
-    with SUBMISSIONS_PATH.open("w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
-
-
 def _normalize_slots(raw: dict[str, str]) -> dict[str, SlotSymbol]:
     out: dict[str, SlotSymbol] = empty_slots()
     for key in ("1", "2", "3", "4"):
@@ -82,11 +63,7 @@ def _normalize_slots(raw: dict[str, str]) -> dict[str, SlotSymbol]:
 
 
 def get_teacher_submission(teacher_id: int, iso_date: str) -> dict[str, SlotSymbol] | None:
-    store = _load_submissions_file()
-    raw = store.get(iso_date, {}).get(str(teacher_id))
-    if raw is None:
-        return None
-    return _normalize_slots(raw)
+    return get_entity_day("teacher", teacher_id, iso_date)
 
 
 def save_teacher_submission(
@@ -94,15 +71,11 @@ def save_teacher_submission(
     iso_date: str,
     slots: dict[str, SlotSymbol],
 ) -> dict[str, ShiftStatus]:
-    store = _load_submissions_file()
-    existing = store.get(iso_date, {}).get(str(teacher_id), {})
+    existing = get_teacher_submission(teacher_id, iso_date) or empty_slots()
     merged = {**existing, **slots}
-    store.setdefault(iso_date, {})[str(teacher_id)] = merged
-    _write_submissions_file(store)
-    return {
-        f"s{i}": symbol_to_dashboard(_normalize_slots(merged)[str(i)])
-        for i in range(1, 5)
-    }
+    upsert_entity_day("teacher", teacher_id, iso_date, merged)
+    normalized = _normalize_slots(merged)
+    return {f"s{i}": symbol_to_dashboard(normalized[str(i)]) for i in range(1, 5)}
 
 
 def save_teacher_bulk(teacher_id: int, submissions: list[dict]) -> list[str]:
@@ -131,11 +104,10 @@ def apply_teacher_submissions(dashboard: dict) -> dict:
     if not iso_date:
         return result
 
-    store = _load_submissions_file()
-    by_date = store.get(iso_date, {})
+    by_date = get_submissions_for_date("teacher", iso_date)
 
     for teacher in result.get("teachers", []):
-        submitted = by_date.get(str(teacher["id"]))
+        submitted = by_date.get(teacher["id"])
         if not submitted:
             continue
         slots = _normalize_slots(submitted)

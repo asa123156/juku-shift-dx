@@ -49,3 +49,25 @@ class PeriodBaseSlot(Base):
     slot_date: Mapped[date] = mapped_column(Date, nullable=False)
     slot_key: Mapped[str] = mapped_column(String(1), nullable=False)
     symbol: Mapped[str] = mapped_column(String(2), nullable=False, default="")
+
+
+class ShiftSubmission(Base):
+    """講師・生徒のシフト提出（日付 × コマ）"""
+
+    __tablename__ = "shift_submissions"
+    __table_args__ = (
+        UniqueConstraint(
+            "role",
+            "entity_id",
+            "slot_date",
+            "slot_key",
+            name="uq_shift_submission",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    role: Mapped[str] = mapped_column(String(10), nullable=False, index=True)
+    entity_id: Mapped[int] = mapped_column(nullable=False)
+    slot_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    slot_key: Mapped[str] = mapped_column(String(1), nullable=False)
+    symbol: Mapped[str] = mapped_column(String(2), nullable=False, default="")

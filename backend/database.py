@@ -30,6 +30,8 @@ def init_db() -> None:
 
     Base.metadata.create_all(bind=engine)
     from services.period_store import seed_period_bases_if_empty, seed_periods_if_empty
+    from services.submission_store import seed_shift_submissions_if_empty
 
     seed_periods_if_empty()
     seed_period_bases_if_empty()
+    seed_shift_submissions_if_empty()
