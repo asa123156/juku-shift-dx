@@ -62,8 +62,18 @@ const TimeSlot = ({ period, time, status, onStatusChange, disabled }) => (
       <button
         type="button"
         disabled={disabled}
+        onClick={() => onStatusChange('priority')}
+        className={`w-11 h-10 rounded-md font-bold text-sm transition-all disabled:opacity-50 ${status === 'priority' ? 'bg-amber-500 text-white shadow-sm' : 'text-gray-400 hover:bg-gray-200'}`}
+        title="通常出勤できる"
+      >
+        ◎
+      </button>
+      <button
+        type="button"
+        disabled={disabled}
         onClick={() => onStatusChange('available')}
-        className={`w-12 h-10 rounded-md font-bold transition-all disabled:opacity-50 ${status === 'available' ? 'bg-emerald-500 text-white shadow-sm' : 'text-gray-400 hover:bg-gray-200'}`}
+        className={`w-11 h-10 rounded-md font-bold transition-all disabled:opacity-50 ${status === 'available' ? 'bg-emerald-500 text-white shadow-sm' : 'text-gray-400 hover:bg-gray-200'}`}
+        title="空いている"
       >
         ○
       </button>
@@ -71,7 +81,8 @@ const TimeSlot = ({ period, time, status, onStatusChange, disabled }) => (
         type="button"
         disabled={disabled}
         onClick={() => onStatusChange('unavailable')}
-        className={`w-12 h-10 rounded-md font-bold transition-all disabled:opacity-50 ${status === 'unavailable' ? 'bg-red-500 text-white shadow-sm' : 'text-gray-400 hover:bg-gray-200'}`}
+        className={`w-11 h-10 rounded-md font-bold transition-all disabled:opacity-50 ${status === 'unavailable' ? 'bg-red-500 text-white shadow-sm' : 'text-gray-400 hover:bg-gray-200'}`}
+        title="入れない"
       >
         ×
       </button>
@@ -237,7 +248,7 @@ export default function StudentShift() {
           {error && <p className="text-red-500 text-sm mb-4 text-center">{error}</p>}
           {submitMessage && <p className="text-emerald-600 text-sm mb-4 text-center font-bold">{submitMessage}</p>}
 
-          <div className="flex gap-2 mb-6 overflow-x-auto pb-2">
+          <div className="flex gap-2 mb-4 overflow-x-auto pb-2">
             {availableDates.map((isoDate) => (
               <DateSelector
                 key={isoDate}
@@ -246,6 +257,12 @@ export default function StudentShift() {
                 onClick={() => setSelectedDate(isoDate)}
               />
             ))}
+          </div>
+
+          <div className="flex justify-center gap-4 mb-4 text-xs text-gray-500">
+            <span><span className="text-amber-600 font-bold">◎</span> 通常出勤</span>
+            <span><span className="text-emerald-600 font-bold">○</span> 空いてる</span>
+            <span><span className="text-red-500 font-bold">×</span> 入れない</span>
           </div>
 
           {isLoading ? (

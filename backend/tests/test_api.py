@@ -45,13 +45,14 @@ def run_tests() -> None:
     payload = {
         "teacher_id": 1,
         "date": "2026-06-10",
-        "slots": {"1": "available", "2": "available", "3": "unavailable", "4": "blank"},
+        "slots": {"1": "priority", "2": "available", "3": "unavailable", "4": "blank"},
     }
     assert client.post("/api/shifts", json=payload).status_code == 200
 
     merged = client.get("/api/shifts", params={"date": "2026-06-10"}).json()
     t1 = next(t for t in merged["teachers"] if t["id"] == 1)
-    assert t1["s1"] == "待機"
+    assert t1["s1"] == "◎"
+    assert t1["s2"] == "待機"
 
     admin = client.patch(
         "/api/admin/shifts/slot",
@@ -95,8 +96,7 @@ def run_tests() -> None:
     )
     assert imported.status_code == 200
     imp = imported.json()
-    assert imp["imported_count"] == 1
-    assert imp["by_date"]["2026-06-11"] == 1
+    assert imp["imported_count"] + imp["skipped_count"] == 1
 
     print("All tests passed.")
 

@@ -9,6 +9,7 @@ from schemas.shifts import AvailabilityStatus, ShiftStatus
 SUBMISSIONS_PATH = DATA_DIR / "teacher-submissions.json"
 
 _AVAILABILITY_TO_DASHBOARD: dict[AvailabilityStatus, ShiftStatus] = {
+    "priority": "◎",
     "available": "待機",
     "unavailable": "不可",
     "blank": "未提出",
@@ -22,6 +23,8 @@ def availability_to_dashboard(status: AvailabilityStatus) -> ShiftStatus:
 
 
 def dashboard_to_availability(status: ShiftStatus) -> AvailabilityStatus:
+    if status == "◎":
+        return "priority"
     if status in ("待機", "確定", "AI提案"):
         return "available"
     if status == "不可":

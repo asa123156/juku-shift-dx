@@ -21,7 +21,7 @@
 | `teacher_id` | はい |
 | `date` | いいえ（省略時 `2026-06-10`） |
 
-`slots`: `available` | `unavailable` | `blank`
+`slots`: `priority` (◎) | `available` (○) | `unavailable` (×) | `blank` (未入力)
 
 ## `POST /api/shifts`
 
@@ -29,15 +29,16 @@
 {
   "teacher_id": 1,
   "date": "2026-06-10",
-  "slots": { "1": "available", "2": "available", "3": "unavailable", "4": "blank" }
+  "slots": { "1": "priority", "2": "available", "3": "unavailable", "4": "blank" }
 }
 ```
 
-| 提出値 | ダッシュボード |
-|--------|----------------|
-| `available` | 待機 |
-| `unavailable` | 不可 |
-| `blank` | 未提出 |
+| 提出値 | 記号 | ダッシュボード |
+|--------|------|----------------|
+| `priority` | ◎ | ◎ |
+| `available` | ○ | 待機 |
+| `unavailable` | × | 不可 |
+| `blank` | 未入力 | 未提出 |
 
 ## 教室長
 
