@@ -55,6 +55,17 @@ python -m tests.test_assignment_engine
 | `teacher@example.com` | `demo` |
 | `admin@example.com` | `demo` |
 
+## データベース（SQLite）
+
+起動時に `backend/juku_shift.db` が自動作成されます（SQLAlchemy）。
+
+```bash
+pip install -r requirements.txt
+uvicorn main:app --reload
+```
+
+現時点では **Period テーブルのみ** 定義済み。API の読み書きは引き続き JSON（`data/periods.json` 等）です。順次 DB に載せ替え予定。
+
 ## データファイル
 
 ```

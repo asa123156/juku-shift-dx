@@ -5,3 +5,4 @@ REPO_ROOT = BACKEND_DIR.parent
 DATA_DIR = BACKEND_DIR / "data"
 DASHBOARDS_DIR = DATA_DIR / "shift-dashboards"
 DEFAULT_SHIFT_DATE = "2026-06-10"
+DATABASE_URL = f"sqlite:///{BACKEND_DIR / 'juku_shift.db'}"
