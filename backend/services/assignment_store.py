@@ -1,16 +1,27 @@
 import json
 from copy import deepcopy
+from datetime import date
+from pathlib import Path
 
 from fastapi import HTTPException
+from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 from config import DATA_DIR
+from database import SessionLocal
+from models import Assignment as AssignmentRow
+from models import AssignmentRequest as AssignmentRequestRow
 from schemas.assignment import AssignmentRecord
 
 ASSIGNMENTS_PATH = DATA_DIR / "assignments.json"
 REQUESTS_PATH = DATA_DIR / "assignment-requests.json"
 
 
-def _read_object(path) -> dict:
+def _session() -> Session:
+    return SessionLocal()
+
+
+def _read_json(path: Path) -> dict:
     if not path.is_file():
         return {}
     with path.open(encoding="utf-8") as f:
@@ -20,63 +31,193 @@ def _read_object(path) -> dict:
     return data
 
 
-def _write_object(path, data: dict) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
+def _assignment_to_dict(row: AssignmentRow) -> dict:
+    return {
+        "date": row.slot_date.isoformat(),
+        "student_id": row.student_id,
+        "student_name": row.student_name,
+        "subject": row.subject,
+        "teacher_id": row.teacher_id,
+        "teacher_name": row.teacher_name,
+        "slot": row.slot,
+    }
 
 
-def get_assignments_for_date(date: str) -> list[dict]:
-    store = _read_object(ASSIGNMENTS_PATH)
-    return deepcopy(store.get(date, []))
+def _request_to_dict(row: AssignmentRequestRow) -> dict:
+    return {
+        "student_id": row.student_id,
+        "student_name": row.student_name,
+        "subject": row.subject,
+    }
 
 
-def get_assignment_requests_for_date(date: str) -> list[dict]:
-    store = _read_object(REQUESTS_PATH)
-    return deepcopy(store.get(date, []))
+def _import_assignments_from_json(db: Session, raw: dict) -> None:
+    for iso_date, rows in raw.items():
+        if not isinstance(rows, list):
+            continue
+        slot_date = date.fromisoformat(iso_date)
+        for item in rows:
+            db.add(
+                AssignmentRow(
+                    slot_date=slot_date,
+                    student_id=int(item["student_id"]),
+                    student_name=item["student_name"],
+                    subject=item["subject"],
+                    teacher_id=int(item["teacher_id"]),
+                    teacher_name=item["teacher_name"],
+                    slot=int(item["slot"]),
+                )
+            )
 
 
-def save_assignments_for_date(date: str, assignments: list[dict]) -> None:
-    store = _read_object(ASSIGNMENTS_PATH)
-    store[date] = assignments
-    _write_object(ASSIGNMENTS_PATH, store)
+def _import_requests_from_json(db: Session, raw: dict) -> None:
+    for iso_date, rows in raw.items():
+        if not isinstance(rows, list):
+            continue
+        slot_date = date.fromisoformat(iso_date)
+        for item in rows:
+            db.add(
+                AssignmentRequestRow(
+                    slot_date=slot_date,
+                    student_id=int(item["student_id"]),
+                    student_name=item["student_name"],
+                    subject=item["subject"],
+                )
+            )
+
+
+def seed_assignments_if_empty() -> None:
+    """DB が空のとき assignments.json から確定割当を投入する。"""
+    with _session() as db:
+        if db.scalar(select(AssignmentRow.id).limit(1)) is not None:
+            return
+        raw = _read_json(ASSIGNMENTS_PATH)
+        if not raw:
+            return
+        _import_assignments_from_json(db, raw)
+        db.commit()
+
+
+def seed_assignment_requests_if_empty() -> None:
+    """DB が空のとき assignment-requests.json から割当リクエストを投入する。"""
+    with _session() as db:
+        if db.scalar(select(AssignmentRequestRow.id).limit(1)) is not None:
+            return
+        raw = _read_json(REQUESTS_PATH)
+        if not raw:
+            return
+        _import_requests_from_json(db, raw)
+        db.commit()
+
+
+def reset_assignments_for_tests() -> None:
+    """テスト用: 割当データをすべて削除する。"""
+    from database import Base, engine
+
+    import models  # noqa: F401
+
+    Base.metadata.create_all(bind=engine)
+    with _session() as db:
+        db.query(AssignmentRow).delete()
+        db.query(AssignmentRequestRow).delete()
+        db.commit()
+
+
+def get_assignments_for_date(iso_date: str) -> list[dict]:
+    target_date = date.fromisoformat(iso_date)
+    with _session() as db:
+        rows = db.scalars(
+            select(AssignmentRow)
+            .where(AssignmentRow.slot_date == target_date)
+            .order_by(AssignmentRow.id)
+        ).all()
+    return deepcopy([_assignment_to_dict(row) for row in rows])
+
+
+def get_assignment_requests_for_date(iso_date: str) -> list[dict]:
+    target_date = date.fromisoformat(iso_date)
+    with _session() as db:
+        rows = db.scalars(
+            select(AssignmentRequestRow)
+            .where(AssignmentRequestRow.slot_date == target_date)
+            .order_by(AssignmentRequestRow.id)
+        ).all()
+    return deepcopy([_request_to_dict(row) for row in rows])
+
+
+def save_assignments_for_date(iso_date: str, assignments: list[dict]) -> None:
+    target_date = date.fromisoformat(iso_date)
+    with _session() as db:
+        db.query(AssignmentRow).filter(AssignmentRow.slot_date == target_date).delete(
+            synchronize_session=False
+        )
+        for item in assignments:
+            db.add(
+                AssignmentRow(
+                    slot_date=target_date,
+                    student_id=int(item["student_id"]),
+                    student_name=item["student_name"],
+                    subject=item["subject"],
+                    teacher_id=int(item["teacher_id"]),
+                    teacher_name=item["teacher_name"],
+                    slot=int(item["slot"]),
+                )
+            )
+        db.commit()
 
 
 def add_assignment(record: AssignmentRecord) -> None:
-    store = _read_object(ASSIGNMENTS_PATH)
-    rows = store.setdefault(record.date, [])
-    rows.append(record.model_dump())
-    _write_object(ASSIGNMENTS_PATH, store)
-
-
-def clear_requests_fulfilled(date: str, fulfilled_student_ids: set[int]) -> None:
-    store = _read_object(REQUESTS_PATH)
-    pending = store.get(date, [])
-    store[date] = [r for r in pending if r["student_id"] not in fulfilled_student_ids]
-    _write_object(REQUESTS_PATH, store)
-
-
-def append_assignment_requests(date: str, requests: list[dict]) -> tuple[int, int]:
-    """リクエストを追加する。戻り値: (追加件数, スキップ件数)"""
-    store = _read_object(REQUESTS_PATH)
-    existing = store.get(date, [])
-    existing_keys = {(r["student_id"], r["subject"]) for r in existing}
-    added = 0
-    skipped = 0
-    for req in requests:
-        key = (req["student_id"], req["subject"])
-        if key in existing_keys:
-            skipped += 1
-            continue
-        existing.append(
-            {
-                "student_id": req["student_id"],
-                "student_name": req["student_name"],
-                "subject": req["subject"],
-            }
+    with _session() as db:
+        db.add(
+            AssignmentRow(
+                slot_date=date.fromisoformat(record.date),
+                student_id=record.student_id,
+                student_name=record.student_name,
+                subject=record.subject,
+                teacher_id=record.teacher_id,
+                teacher_name=record.teacher_name,
+                slot=record.slot,
+            )
         )
-        existing_keys.add(key)
-        added += 1
-    store[date] = existing
-    _write_object(REQUESTS_PATH, store)
+        db.commit()
+
+
+def clear_requests_fulfilled(iso_date: str, fulfilled_student_ids: set[int]) -> None:
+    if not fulfilled_student_ids:
+        return
+    target_date = date.fromisoformat(iso_date)
+    with _session() as db:
+        db.query(AssignmentRequestRow).filter(
+            AssignmentRequestRow.slot_date == target_date,
+            AssignmentRequestRow.student_id.in_(fulfilled_student_ids),
+        ).delete(synchronize_session=False)
+        db.commit()
+
+
+def append_assignment_requests(iso_date: str, requests: list[dict]) -> tuple[int, int]:
+    """リクエストを追加する。戻り値: (追加件数, スキップ件数)"""
+    target_date = date.fromisoformat(iso_date)
+    with _session() as db:
+        existing = db.scalars(
+            select(AssignmentRequestRow).where(AssignmentRequestRow.slot_date == target_date)
+        ).all()
+        existing_keys = {(row.student_id, row.subject) for row in existing}
+        added = 0
+        skipped = 0
+        for req in requests:
+            key = (req["student_id"], req["subject"])
+            if key in existing_keys:
+                skipped += 1
+                continue
+            db.add(
+                AssignmentRequestRow(
+                    slot_date=target_date,
+                    student_id=req["student_id"],
+                    student_name=req["student_name"],
+                    subject=req["subject"],
+                )
+            )
+            existing_keys.add(key)
+            added += 1
+        db.commit()
     return added, skipped

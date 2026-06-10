@@ -64,7 +64,7 @@ pip install -r requirements.txt
 uvicorn main:app --reload
 ```
 
-**Period CRUD**、**period-bases**、**submissions**、**admin-overrides** は SQLite を使用。初回起動時に `data/*.json` が空 DB へシードされる。assignments 等は引き続き JSON。
+**Period CRUD**、**period-bases**、**submissions**、**admin-overrides**、**assignments / assignment-requests** は SQLite を使用。初回起動時に `data/*.json` が空 DB へシードされる。shift-dashboards 等は引き続き JSON。
 
 ## データファイル
 

@@ -1,23 +1,18 @@
 """API スモークテスト。実行: cd backend && python -m tests.test_api"""
 
-import json
-from pathlib import Path
-
 from fastapi.testclient import TestClient
-
-DATA_DIR = Path(__file__).resolve().parent.parent / "data"
-ASSIGNMENTS = DATA_DIR / "assignments.json"
 
 
 def _reset_data() -> None:
-    ASSIGNMENTS.write_text("{}", encoding="utf-8")
     from services.admin_store import reset_admin_overrides_for_tests
+    from services.assignment_store import reset_assignments_for_tests
     from services.period_store import reset_periods_for_tests
     from services.submission_store import reset_submissions_for_tests
 
     reset_periods_for_tests()
     reset_submissions_for_tests()
     reset_admin_overrides_for_tests()
+    reset_assignments_for_tests()
 
 
 def run_tests() -> None:

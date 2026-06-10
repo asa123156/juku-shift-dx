@@ -91,3 +91,38 @@ class ShiftSubmission(Base):
     slot_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
     slot_key: Mapped[str] = mapped_column(String(1), nullable=False)
     symbol: Mapped[str] = mapped_column(String(2), nullable=False, default="")
+
+
+class Assignment(Base):
+    """確定した割当（生徒 × 講師 × コマ）"""
+
+    __tablename__ = "assignments"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    slot_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    student_id: Mapped[int] = mapped_column(nullable=False)
+    student_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    subject: Mapped[str] = mapped_column(String(255), nullable=False)
+    teacher_id: Mapped[int] = mapped_column(nullable=False)
+    teacher_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    slot: Mapped[int] = mapped_column(nullable=False)
+
+
+class AssignmentRequest(Base):
+    """未割当の割当リクエスト（CSV 取込）"""
+
+    __tablename__ = "assignment_requests"
+    __table_args__ = (
+        UniqueConstraint(
+            "slot_date",
+            "student_id",
+            "subject",
+            name="uq_assignment_request",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    slot_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    student_id: Mapped[int] = mapped_column(nullable=False)
+    student_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    subject: Mapped[str] = mapped_column(String(255), nullable=False)
