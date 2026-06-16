@@ -1,0 +1,41 @@
+{
+  "next_id": 100,
+  "items": [
+    {
+      "id": 1,
+      "name": "近大太郎",
+      "school_level": "high",
+      "grade_year": 2
+    },
+    {
+      "id": 2,
+      "name": "山田花子",
+      "school_level": "middle",
+      "grade_year": 3
+    },
+    {
+      "id": 3,
+      "name": "近大次郎",
+      "school_level": "middle",
+      "grade_year": 1
+    },
+    {
+      "id": 4,
+      "name": "佐藤美咲",
+      "school_level": "elementary",
+      "grade_year": 6
+    },
+    {
+      "id": 5,
+      "name": "高橋健太",
+      "school_level": "high",
+      "grade_year": 1
+    },
+    {
+      "id": 99,
+      "name": "テスト太郎",
+      "school_level": "elementary",
+      "grade_year": 4
+    }
+  ]
+}

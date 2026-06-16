@@ -10,6 +10,7 @@ from config import DATA_DIR
 from database import SessionLocal
 from models import ShiftSubmission
 from schemas.period import SlotSymbol, empty_slots
+from services.slot_timing import SLOT_KEYS
 
 TEACHER_SUBMISSIONS_PATH = DATA_DIR / "teacher-submissions.json"
 STUDENT_SUBMISSIONS_PATH = DATA_DIR / "student-submissions.json"
@@ -39,7 +40,7 @@ def _import_submissions_from_json(db: Session, raw: dict, role: str) -> None:
                 continue
             entity_id = int(entity_key)
             for slot_key, symbol in slots.items():
-                if slot_key not in ("1", "2", "3", "4"):
+                if slot_key not in SLOT_KEYS:
                     continue
                 db.add(
                     ShiftSubmission(
@@ -96,7 +97,7 @@ def get_entity_day(role: str, entity_id: int, iso_date: str) -> dict[str, SlotSy
 def upsert_entity_day(role: str, entity_id: int, iso_date: str, slots: dict[str, SlotSymbol]) -> None:
     target_date = date.fromisoformat(iso_date)
     with _session() as db:
-        for slot_key in ("1", "2", "3", "4"):
+        for slot_key in SLOT_KEYS:
             symbol = slots.get(slot_key, "")
             existing = db.scalars(
                 select(ShiftSubmission).where(

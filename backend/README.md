@@ -45,15 +45,33 @@ python -m tests.test_assignment_engine
 | POST | `/api/admin/auto-assign` | AI自動割当実行 |
 | POST | `/api/admin/assignment-requests/import` | CSV 割当リクエスト取込 |
 | GET | `/api/lessons` | 授業コマ割り |
+| GET | `/api/export/juku-schedule` | インポート済み月次 Excel に割当を反映して返す |
+| GET | `/api/google/status` | Google Sheets 連携の設定状態 |
+| POST | `/api/google/import` | Google スプレッドシートから時間割取込 |
+| POST | `/api/google/export` | 確定時間割を Google スプレッドシートへ書き出し |
 
 仕様詳細: [docs/api.md](../docs/api.md)
 
 ## デモアカウント
 
-| メール | パスワード |
-|--------|------------|
-| `teacher@example.com` | `demo` |
-| `admin@example.com` | `demo` |
+| メール | パスワード | 役割 |
+|--------|------------|------|
+| `teacher@example.com` | `demo` | 講師 |
+| `student@example.com` | `demo` | 生徒 |
+| `admin@example.com` | `demo` | 教室長 |
+
+## Google Sheets 連携（任意）
+
+サービスアカウント JSON を環境変数で指定します。
+
+```bash
+export GOOGLE_SERVICE_ACCOUNT_FILE=/path/to/service-account.json
+# または
+export GOOGLE_SERVICE_ACCOUNT_JSON='{"type":"service_account",...}'
+```
+
+対象スプレッドシートをサービスアカウントの `client_email` に **編集者** で共有してください。
+フロントの「データインポート → Google スプレッドシート」タブ、またはダッシュボードの「Google へ書き出し」から利用できます。
 
 ## データベース（SQLite）
 

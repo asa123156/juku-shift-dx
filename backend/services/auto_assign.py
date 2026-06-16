@@ -1,25 +1,31 @@
 from schemas.assignment import AssignmentRecord, AutoAssignProposal
 from services.assignment_engine import pick_best_candidate, teachers_from_dashboard
 from services.assignment_grid import build_assignment_grid
+from services.match_rules import MatchRules
 from services.assignment_store import (
     add_assignment,
-    clear_requests_fulfilled,
+    clear_request_fulfilled,
     get_assignment_requests_for_date,
     get_assignments_for_date,
 )
 from services.availability_dashboard import build_availability_dashboard
 
 
-def run_auto_assign(date: str) -> tuple[list[AutoAssignProposal], list[AssignmentRecord], dict]:
+def run_auto_assign(
+    date: str,
+    rules: MatchRules | None = None,
+    all_assignments: list[dict] | None = None,
+) -> tuple[list[AutoAssignProposal], list[AssignmentRecord], dict]:
     """未割当リクエストごとに候補を探索し、最適な講師×コマを割り当てる。"""
+    rules = rules or MatchRules()
     dashboard = build_availability_dashboard(date)
     teacher_list = teachers_from_dashboard(dashboard)
     current_assignments = get_assignments_for_date(date)
+    pool = all_assignments if all_assignments is not None else list(current_assignments)
     requests = get_assignment_requests_for_date(date)
 
     proposals: list[AutoAssignProposal] = []
     new_records: list[AssignmentRecord] = []
-    fulfilled_ids: set[int] = set()
 
     for req in requests:
         student_id = req["student_id"]
@@ -31,6 +37,8 @@ def run_auto_assign(date: str) -> tuple[list[AutoAssignProposal], list[Assignmen
             teacher_list=teacher_list,
             current_assignments=current_assignments,
             date=date,
+            rules=rules,
+            all_assignments=pool,
         )
         if best is None:
             continue
@@ -45,8 +53,11 @@ def run_auto_assign(date: str) -> tuple[list[AutoAssignProposal], list[Assignmen
             slot=best["slot"],
         )
         add_assignment(record)
-        current_assignments.append(record.model_dump())
-        fulfilled_ids.add(student_id)
+        dumped = record.model_dump()
+        current_assignments.append(dumped)
+        if all_assignments is not None:
+            pool.append(dumped)
+        clear_request_fulfilled(date, student_id, subject)
 
         proposals.append(
             AutoAssignProposal(
@@ -61,9 +72,6 @@ def run_auto_assign(date: str) -> tuple[list[AutoAssignProposal], list[Assignmen
         )
         new_records.append(record)
 
-    if fulfilled_ids:
-        clear_requests_fulfilled(date, fulfilled_ids)
-
     grid = build_assignment_grid(date)
-    all_assignments = get_assignments_for_date(date)
-    return proposals, [AssignmentRecord.model_validate(a) for a in all_assignments], grid
+    all_assignments_day = get_assignments_for_date(date)
+    return proposals, [AssignmentRecord.model_validate(a) for a in all_assignments_day], grid

@@ -24,5 +24,50 @@
     "student_id": 1,
     "name": "近大太郎",
     "redirect": "/student-schedule"
+  },
+  {
+    "email": "student2@example.com",
+    "password": "demo",
+    "role": "student",
+    "teacher_id": null,
+    "student_id": 2,
+    "name": "山田花子",
+    "redirect": "/student-schedule"
+  },
+  {
+    "email": "student3@example.com",
+    "password": "demo",
+    "role": "student",
+    "teacher_id": null,
+    "student_id": 3,
+    "name": "近大次郎",
+    "redirect": "/student-schedule"
+  },
+  {
+    "email": "student4@example.com",
+    "password": "demo",
+    "role": "student",
+    "teacher_id": null,
+    "student_id": 4,
+    "name": "佐藤美咲",
+    "redirect": "/student-schedule"
+  },
+  {
+    "email": "student5@example.com",
+    "password": "demo",
+    "role": "student",
+    "teacher_id": null,
+    "student_id": 5,
+    "name": "高橋健太",
+    "redirect": "/student-schedule"
+  },
+  {
+    "email": "student99@example.com",
+    "password": "demo",
+    "role": "student",
+    "teacher_id": null,
+    "student_id": 99,
+    "name": "テスト太郎",
+    "redirect": "/student-schedule"
   }
 ]

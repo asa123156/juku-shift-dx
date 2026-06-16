@@ -7,14 +7,52 @@ from schemas.admin import (
     AdminSlotUpdateRequest,
 )
 from schemas.assignment import (
+    AssignmentRecord,
     AssignmentCandidatesRequest,
     AssignmentCandidatesResponse,
     AssignmentCandidate,
     AssignmentGridResponse,
+    AssignmentSheetsResponse,
+    AutoAssignPeriodRequest,
+    AutoAssignPeriodResponse,
     AutoAssignRequest,
     AutoAssignResponse,
+    CancelAssignmentRequest,
+    CancelAssignmentResponse,
     ImportAssignmentRequestsResponse,
     ManualAssignRequest,
+    MatchRulesRequest,
+    PublishScheduleRequest,
+    PublishScheduleResponse,
+    PublishTeacherScheduleRequest,
+    PublishTeacherScheduleResponse,
+)
+from schemas.change_request import (
+    ChangeRequestItem,
+    ChangeRequestListResponse,
+    ChangeRequestResolveRequest,
+    ChangeRequestResolveResponse,
+    PublishAllRequest,
+    PublishAllResponse,
+)
+from schemas.student_plan import (
+    PeriodStudentPlansEntry,
+    PeriodStudentPlansResponse,
+    StudentSubjectPlansBody,
+    StudentSubjectPlansResponse,
+    SubjectPlanItem,
+)
+from schemas.entity import (
+    StudentCreateRequest,
+    StudentGroupedResponse,
+    StudentGroup,
+    StudentListResponse,
+    StudentProfile,
+    StudentUpdateRequest,
+    TeacherCreateRequest,
+    TeacherListResponse,
+    TeacherProfile,
+    TeacherUpdateRequest,
 )
 from schemas.period import (
     PeriodCreateRequest,
@@ -30,30 +68,60 @@ from services.assignment_engine import (
     teachers_from_dashboard,
 )
 from services.assignment_grid import build_assignment_grid, manual_assign
-from services.assignment_store import get_assignments_for_date
+from services.assignment_sheets import build_assignment_sheets
+from services.assignment_store import cancel_assignment_at_slot, get_assignments_between, get_assignments_for_date
 from services.auto_assign import run_auto_assign
 from services.availability_dashboard import build_availability_dashboard
+from services.match_rules import MatchRules
 from services.csv_import import import_assignment_requests_from_csv
 from services.dashboard_builder import build_shift_dashboard, build_shift_dashboard_base_only
 from services.data_loader import resolve_shift_date
-from services.period_store import create_period, get_period, iter_dates, list_periods, update_period_status
+from services.period_bootstrap import bootstrap_period_dashboards
+from services.period_store import (
+    create_period,
+    get_period,
+    iter_dates,
+    open_dates_for_period,
+    list_periods,
+    set_active_period,
+    update_period_status,
+)
 from services.shift_excel import import_shift_excel_csv, import_shift_excel_xlsx, export_shift_excel_xlsx
+from services.schedule_publish_store import (
+    publish_all_schedules,
+    publish_student_schedule,
+    publish_teacher_schedule,
+)
+from services.change_request_store import count_pending_requests, list_change_requests, resolve_change_request
 from services.shift_store import ensure_teacher_exists
+from services.entity_store import get_student
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
 
 @router.get("/assignments/grid", response_model=AssignmentGridResponse)
 def get_assignment_grid(date: str = Query(..., pattern=r"^\d{4}-\d{2}-\d{2}$")) -> AssignmentGridResponse:
-    """講師×コマの割当グリッド（自動・手動割当ページ用）"""
+    """講師×コマの割当グリッド（1日分・後方互換）"""
     resolve_shift_date(date)
     return AssignmentGridResponse.model_validate(build_assignment_grid(date))
+
+
+@router.get("/assignments/sheets", response_model=AssignmentSheetsResponse)
+def get_assignment_sheets(period_id: int = Query(..., ge=1)) -> AssignmentSheetsResponse:
+    """期間内の生徒・講師シート（日曜除外・複数日）"""
+    get_period(period_id)
+    return AssignmentSheetsResponse.model_validate(build_assignment_sheets(period_id))
 
 
 @router.post("/assignments/manual", response_model=AssignmentGridResponse)
 def assign_manual(body: ManualAssignRequest) -> AssignmentGridResponse:
     """手動で生徒を講師コマに割り当てる"""
     resolve_shift_date(body.date)
+    rules = MatchRules.from_dict(body.rules.model_dump() if body.rules else None)
+    all_assignments = None
+    if body.period_id is not None:
+        period = get_period(body.period_id)
+        all_assignments = get_assignments_between(period.start_date, period.end_date)
     grid = manual_assign(
         body.date,
         body.student_id,
@@ -61,8 +129,122 @@ def assign_manual(body: ManualAssignRequest) -> AssignmentGridResponse:
         body.subject,
         body.teacher_id,
         body.slot,
+        rules=rules,
+        all_assignments=all_assignments,
     )
     return AssignmentGridResponse.model_validate(grid)
+
+
+@router.post("/assignments/cancel", response_model=CancelAssignmentResponse)
+def cancel_assignment(body: CancelAssignmentRequest) -> CancelAssignmentResponse:
+    """割当を解除して未割当リクエストに戻す"""
+    resolve_shift_date(body.date)
+    get_period(body.period_id)
+    cancelled = cancel_assignment_at_slot(
+        body.date, body.teacher_id, body.slot, student_id=body.student_id
+    )
+    if cancelled is None:
+        raise HTTPException(status_code=404, detail="割当が見つかりません")
+    sheets = build_assignment_sheets(body.period_id)
+    return CancelAssignmentResponse(
+        message=f"{cancelled['student_name']} の {cancelled['subject']} 割当を解除しました",
+        cancelled=AssignmentRecord.model_validate(cancelled),
+        sheets=AssignmentSheetsResponse.model_validate(sheets),
+    )
+
+
+@router.post("/assignments/publish-schedule", response_model=PublishScheduleResponse)
+def publish_schedule_to_student(body: PublishScheduleRequest) -> PublishScheduleResponse:
+    """生徒の割当を確定し、生徒画面にスケジュールを送信する。"""
+    get_period(body.period_id)
+    student = get_student(body.student_id)
+    sheets = build_assignment_sheets(body.period_id)
+    student_row = next((s for s in sheets["students"] if s["id"] == body.student_id), None)
+    pending = student_row["pending_count"] if student_row else 0
+    if pending > 0:
+        raise HTTPException(
+            status_code=409,
+            detail=f"未割当が {pending} 件残っているため確定できません",
+        )
+    already = not publish_student_schedule(body.period_id, body.student_id)
+    sheets = build_assignment_sheets(body.period_id)
+    if already:
+        msg = f"「{student['name']}」は既に確定済みです"
+    else:
+        msg = f"「{student['name']}」にスケジュールを送信しました。生徒画面で確認できます。"
+    return PublishScheduleResponse(
+        message=msg,
+        already_published=already,
+        sheets=AssignmentSheetsResponse.model_validate(sheets),
+    )
+
+
+@router.post("/assignments/publish-teacher-schedule", response_model=PublishTeacherScheduleResponse)
+def publish_schedule_to_teacher(body: PublishTeacherScheduleRequest) -> PublishTeacherScheduleResponse:
+    """講師に確定スケジュールを送付する。"""
+    get_period(body.period_id)
+    sheets = build_assignment_sheets(body.period_id)
+    teacher_row = next((t for t in sheets["teachers"] if t["id"] == body.teacher_id), None)
+    if teacher_row is None:
+        raise HTTPException(status_code=404, detail="講師が見つかりません")
+    already = not publish_teacher_schedule(body.period_id, body.teacher_id)
+    sheets = build_assignment_sheets(body.period_id)
+    if already:
+        msg = f"「{teacher_row['name']}」は既に送付済みです"
+    else:
+        msg = f"「{teacher_row['name']}」にスケジュールを送信しました。講師画面で確認できます。"
+    return PublishTeacherScheduleResponse(
+        message=msg,
+        already_published=already,
+        sheets=AssignmentSheetsResponse.model_validate(sheets),
+    )
+
+
+@router.post("/assignments/publish-all", response_model=PublishAllResponse)
+def publish_all_schedules_to_members(body: PublishAllRequest) -> PublishAllResponse:
+    """割当済み生徒・全講師にスケジュールを一括送付。"""
+    get_period(body.period_id)
+    result = publish_all_schedules(body.period_id)
+    skipped = result["students_skipped"]
+    msg = (
+        f"生徒 {result['students_published']} 名・講師 {result['teachers_published']} 名に送付しました"
+    )
+    if skipped:
+        msg += f"（未割当のためスキップ: {', '.join(skipped)}）"
+    return PublishAllResponse(
+        period_id=body.period_id,
+        students_published=result["students_published"],
+        students_skipped=skipped,
+        teachers_published=result["teachers_published"],
+        message=msg,
+    )
+
+
+@router.get("/change-requests", response_model=ChangeRequestListResponse)
+def get_change_requests(
+    period_id: int = Query(..., ge=1),
+    status: str | None = Query(None, pattern="^(PENDING|APPROVED|REJECTED)$"),
+) -> ChangeRequestListResponse:
+    requests = list_change_requests(period_id, status=status)
+    pending = count_pending_requests(period_id)
+    return ChangeRequestListResponse(
+        period_id=period_id,
+        requests=[ChangeRequestItem.model_validate(r) for r in requests],
+        pending_count=pending,
+    )
+
+
+@router.patch("/change-requests/{request_id}", response_model=ChangeRequestResolveResponse)
+def resolve_change_request_endpoint(
+    request_id: int,
+    body: ChangeRequestResolveRequest,
+) -> ChangeRequestResolveResponse:
+    row = resolve_change_request(request_id, body.action)
+    action_label = "承認" if body.action == "approve" else "却下"
+    return ChangeRequestResolveResponse(
+        request=ChangeRequestItem.model_validate(row),
+        message=f"変更申請を{action_label}しました",
+    )
 
 
 @router.patch("/shifts/slot", response_model=ShiftDashboardResponse)
@@ -102,7 +284,17 @@ def list_assignment_candidates(body: AssignmentCandidatesRequest) -> AssignmentC
         current_assignments=current_assignments,
         date=body.date,
     )
-    ranked = rank_candidates(raw, teacher_list)
+    from services.assignment_engine import load_student_slots
+
+    student_slots = load_student_slots(body.student_id, body.date)
+    ranked = rank_candidates(
+        raw,
+        teacher_list,
+        body.date,
+        current_assignments,
+        student_slots=student_slots,
+        subject=body.subject,
+    )
     candidates = [AssignmentCandidate.model_validate(c) for c in ranked]
 
     return AssignmentCandidatesResponse(
@@ -123,6 +315,25 @@ def auto_assign(body: AutoAssignRequest) -> AutoAssignResponse:
         proposals=proposals,
         assignments=assignments,
         grid=AssignmentGridResponse.model_validate(grid),
+    )
+
+
+@router.post("/auto-assign-period", response_model=AutoAssignPeriodResponse)
+def auto_assign_period(body: AutoAssignPeriodRequest) -> AutoAssignPeriodResponse:
+    period = get_period(body.period_id)
+    rules = MatchRules.from_dict(body.rules.model_dump() if body.rules else None)
+    open_dates = open_dates_for_period(period)
+    all_assignments = get_assignments_between(period.start_date, period.end_date)
+    total = 0
+    for iso_date in open_dates:
+        proposals, _, _ = run_auto_assign(iso_date, rules=rules, all_assignments=all_assignments)
+        total += len(proposals)
+    sheets = build_assignment_sheets(body.period_id)
+    return AutoAssignPeriodResponse(
+        period_id=body.period_id,
+        message=f"期間内 {total} 件の自動割当を実行しました",
+        assigned_count=total,
+        sheets=AssignmentSheetsResponse.model_validate(sheets),
     )
 
 
@@ -158,25 +369,204 @@ def get_periods() -> PeriodListResponse:
     return PeriodListResponse(periods=periods, active_period_id=active_id)
 
 
+@router.get("/periods/{period_id}/student-plans", response_model=PeriodStudentPlansResponse)
+def get_period_student_plans(period_id: int) -> PeriodStudentPlansResponse:
+    from services.entity_store import list_students
+    from services.period_store import get_period
+    from services.student_plan_store import list_plans_for_period
+
+    period = get_period(period_id)
+    plans_by_student = list_plans_for_period(period_id)
+    entries: list[PeriodStudentPlansEntry] = []
+    for student in list_students():
+        sid = student["id"]
+        plans = [SubjectPlanItem.model_validate(p) for p in plans_by_student.get(sid, [])]
+        entries.append(
+            PeriodStudentPlansEntry(
+                student_id=sid,
+                student_name=student["name"],
+                grade_label=student.get("grade_label", ""),
+                plans=plans,
+            )
+        )
+    return PeriodStudentPlansResponse(
+        period_id=period_id,
+        period_name=period.name,
+        students=entries,
+    )
+
+
+@router.get(
+    "/periods/{period_id}/students/{student_id}/plans",
+    response_model=StudentSubjectPlansResponse,
+)
+def get_student_subject_plans(period_id: int, student_id: int) -> StudentSubjectPlansResponse:
+    from services.entity_store import get_student
+    from services.student_plan_store import list_plans_for_student
+
+    student = get_student(student_id)
+    plans = [SubjectPlanItem.model_validate(p) for p in list_plans_for_student(period_id, student_id)]
+    return StudentSubjectPlansResponse(
+        period_id=period_id,
+        student_id=student_id,
+        student_name=student["name"],
+        plans=plans,
+        synced_request_count=0,
+    )
+
+
+@router.put(
+    "/periods/{period_id}/students/{student_id}/plans",
+    response_model=StudentSubjectPlansResponse,
+)
+def save_student_subject_plans(
+    period_id: int,
+    student_id: int,
+    body: StudentSubjectPlansBody,
+) -> StudentSubjectPlansResponse:
+    from services.entity_store import get_student
+    from services.student_plan_store import save_student_plans
+
+    student = get_student(student_id)
+    saved, synced = save_student_plans(
+        period_id,
+        student_id,
+        [p.model_dump() for p in body.plans],
+    )
+    return StudentSubjectPlansResponse(
+        period_id=period_id,
+        student_id=student_id,
+        student_name=student["name"],
+        plans=[SubjectPlanItem.model_validate(p) for p in saved],
+        synced_request_count=synced,
+    )
+
+
+@router.get("/students", response_model=StudentListResponse)
+def get_students() -> StudentListResponse:
+    from services.entity_store import list_students
+
+    return StudentListResponse(students=[StudentProfile.model_validate(s) for s in list_students()])
+
+
+@router.get("/students/grouped", response_model=StudentGroupedResponse)
+def get_students_grouped() -> StudentGroupedResponse:
+    from services.entity_store import list_students_grouped
+
+    groups = [StudentGroup.model_validate(g) for g in list_students_grouped()]
+    return StudentGroupedResponse(groups=groups)
+
+
+@router.post("/students", response_model=StudentProfile)
+def add_student(body: StudentCreateRequest) -> StudentProfile:
+    from services.entity_store import create_student
+
+    return StudentProfile.model_validate(create_student(body.name, body.school_level, body.grade_year))
+
+
+@router.patch("/students/{student_id}", response_model=StudentProfile)
+def edit_student(student_id: int, body: StudentUpdateRequest) -> StudentProfile:
+    from services.entity_store import update_student
+
+    return StudentProfile.model_validate(
+        update_student(student_id, body.name, body.school_level, body.grade_year)
+    )
+
+
+@router.delete("/students/{student_id}")
+def remove_student(student_id: int) -> dict:
+    from services.entity_store import delete_student
+
+    delete_student(student_id)
+    return {"message": "生徒を削除しました"}
+
+
+@router.get("/teachers", response_model=TeacherListResponse)
+def get_teachers_master() -> TeacherListResponse:
+    from services.entity_store import list_teachers
+
+    return TeacherListResponse(teachers=[TeacherProfile.model_validate(t) for t in list_teachers()])
+
+
+@router.post("/teachers", response_model=TeacherProfile)
+def add_teacher(body: TeacherCreateRequest) -> TeacherProfile:
+    from services.entity_store import create_teacher
+
+    return TeacherProfile.model_validate(create_teacher(body.name, body.color))
+
+
+@router.patch("/teachers/{teacher_id}", response_model=TeacherProfile)
+def edit_teacher(teacher_id: int, body: TeacherUpdateRequest) -> TeacherProfile:
+    from services.entity_store import update_teacher
+
+    return TeacherProfile.model_validate(update_teacher(teacher_id, body.name, body.color))
+
+
+@router.delete("/teachers/{teacher_id}")
+def remove_teacher(teacher_id: int) -> dict:
+    from services.entity_store import delete_teacher
+
+    delete_teacher(teacher_id)
+    return {"message": "講師を削除しました"}
+
+
 @router.post("/periods", response_model=PeriodResponse)
 def create_shift_period(body: PeriodCreateRequest) -> PeriodResponse:
-    period = create_period(body.name, body.start_date, body.end_date)
-    dates = iter_dates(period.start_date, period.end_date)
+    period = create_period(body.name, body.start_date, body.end_date, body.closed_dates)
+    open_dates = open_dates_for_period(period)
+    day_count = bootstrap_period_dashboards(period.id)
+    closed_note = f"・休校 {len(body.closed_dates)} 日" if body.closed_dates else ""
     return PeriodResponse(
         period=period,
-        dates=dates,
-        message=f"期間「{period.name}」を DRAFT で作成しました",
+        dates=iter_dates(period.start_date, period.end_date),
+        open_dates=open_dates,
+        message=f"講習「{period.name}」を作成しました（開校 {day_count} 日分{closed_note}）",
+    )
+
+
+@router.patch("/periods/{period_id}/activate", response_model=PeriodResponse)
+def activate_period(period_id: int) -> PeriodResponse:
+    period = set_active_period(period_id)
+    open_dates = open_dates_for_period(period)
+    return PeriodResponse(
+        period=period,
+        dates=iter_dates(period.start_date, period.end_date),
+        open_dates=open_dates,
+        message=f"講習「{period.name}」を選択しました",
     )
 
 
 @router.patch("/periods/{period_id}/status", response_model=PeriodResponse)
 def change_period_status(period_id: int, body: PeriodStatusUpdateRequest) -> PeriodResponse:
+    if body.status == "FINALIZED":
+        sheets = build_assignment_sheets(period_id)
+        pending_total = sheets.get("pending_total", 0)
+        if pending_total > 0 and not body.force:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"未割当が {pending_total} 件残っています。"
+                    "割当を完了するか、force: true で強制確定してください。"
+                ),
+            )
     period = update_period_status(period_id, body.status)
-    dates = iter_dates(period.start_date, period.end_date)
+    open_dates = open_dates_for_period(period)
     msg = f"期間ステータスを {body.status} に更新しました"
     if body.status == "FINALIZED":
-        msg = "シフトを確定しました。生徒に確定スケジュールが反映されます。"
-    return PeriodResponse(period=period, dates=dates, message=msg)
+        publish_result = publish_all_schedules(period_id)
+        msg = (
+            f"シフトを確定しました。"
+            f" 生徒 {publish_result['students_published']} 名・"
+            f"講師 {publish_result['teachers_published']} 名にスケジュールを送付しました。"
+        )
+        if publish_result["students_skipped"]:
+            msg += f"（未割当スキップ: {', '.join(publish_result['students_skipped'])}）"
+    return PeriodResponse(
+        period=period,
+        dates=iter_dates(period.start_date, period.end_date),
+        open_dates=open_dates,
+        message=msg,
+    )
 
 
 @router.post("/shifts/import-excel", response_model=ShiftImportResponse)

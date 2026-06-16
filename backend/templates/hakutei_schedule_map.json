@@ -1,0 +1,21 @@
+{
+  "template_file": "hakutei_schedule_template.xlsx",
+  "sheet_name_pattern": "{month}月{day}日",
+  "date_header_row": 0,
+  "date_header_col": 1,
+  "time_column": 0,
+  "teacher_columns": [9, 29, 49, 69, 89, 109],
+  "offsets_from_teacher": {
+    "seat": -8,
+    "grade_a": -7,
+    "name_a": -5,
+    "subject_a": -4,
+    "type_a": -3,
+    "teacher": 0,
+    "grade_b": 1,
+    "name_b": 3,
+    "subject_b": 4,
+    "type_b": 5
+  },
+  "grade_label_col_shift": -1
+}

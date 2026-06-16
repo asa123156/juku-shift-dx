@@ -11,9 +11,10 @@ from config import DATA_DIR
 from database import SessionLocal
 from models import AdminOverride
 from schemas.shifts import ShiftStatus
+from services.slot_timing import SLOT_FIELDS, SLOT_KEYS
 
 OVERRIDES_PATH = DATA_DIR / "admin-overrides.json"
-_SLOT_FIELDS = ("s1", "s2", "s3", "s4")
+_SLOT_FIELDS = SLOT_FIELDS
 
 
 def _session() -> Session:
@@ -40,7 +41,7 @@ def _import_overrides_from_json(db: Session, raw: dict) -> None:
                 continue
             teacher_id = int(teacher_key)
             for slot_key, status in slots.items():
-                if slot_key not in ("1", "2", "3", "4") or not status:
+                if slot_key not in SLOT_KEYS or not status:
                     continue
                 db.add(
                     AdminOverride(

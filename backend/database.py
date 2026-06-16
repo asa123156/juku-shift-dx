@@ -1,6 +1,6 @@
 from collections.abc import Generator
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from config import DATABASE_URL
@@ -29,6 +29,7 @@ def init_db() -> None:
     import models  # noqa: F401 — register ORM models with Base.metadata
 
     Base.metadata.create_all(bind=engine)
+    migrate_sqlite_schema()
     from services.admin_store import seed_admin_overrides_if_empty
     from services.assignment_store import seed_assignment_requests_if_empty, seed_assignments_if_empty
     from services.dashboard_store import seed_shift_dashboards_if_empty
@@ -42,3 +43,18 @@ def init_db() -> None:
     seed_assignments_if_empty()
     seed_assignment_requests_if_empty()
     seed_shift_dashboards_if_empty()
+    from services.entity_store import seed_entities_if_empty
+
+    seed_entities_if_empty()
+
+
+def migrate_sqlite_schema() -> None:
+    """既存 DB に不足列があれば追加する（SQLite）。"""
+    if not DATABASE_URL.startswith("sqlite"):
+        return
+    with engine.connect() as conn:
+        rows = conn.execute(text("PRAGMA table_info(periods)")).fetchall()
+        col_names = {row[1] for row in rows}
+        if "closed_dates" not in col_names:
+            conn.execute(text("ALTER TABLE periods ADD COLUMN closed_dates JSON DEFAULT '[]'"))
+            conn.commit()

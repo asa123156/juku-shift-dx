@@ -10,7 +10,7 @@ from config import DASHBOARDS_DIR, REPO_ROOT
 from database import SessionLocal
 from models import ShiftDashboard as ShiftDashboardRow
 
-_EMPTY_METRICS = {"unsubmitted_teachers": 0, "shortage_slots": 0}
+_EMPTY_METRICS = {"unsubmitted_teachers": 0}
 
 
 def _session() -> Session:
@@ -100,3 +100,9 @@ def load_shift_dashboard_base(iso_date: str) -> dict:
             detail=f"Dashboard date mismatch: expected {iso_date}",
         )
     return _row_to_dict(row)
+
+
+def upsert_shift_dashboard(data: dict) -> None:
+    with _session() as db:
+        _import_dashboard(db, data)
+        db.commit()

@@ -1,20 +1,19 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { loadSession, clearSession } from '../utils/session';
 import { useStudentSession } from '../hooks/useStudentSession';
 import {
   apiSlotsToState,
-  ScheduleLegend,
+  EMPTY_SLOTS,
+  StudentScheduleLegend,
   stateToApiSlots,
-  TimeSlotRow,
+  StudentSlotRow,
+  PeriodBanner,
+  DateTabs,
+  DayScheduleOverview,
+  collectProposalChanges,
+  submitChangeProposal,
 } from '../components/ScheduleEditor';
-
-const WEEKDAYS = ['日', '月', '火', '水', '木', '金', '土'];
-
-function parseDateTab(isoDate) {
-  const d = new Date(`${isoDate}T12:00:00`);
-  return { day: WEEKDAYS[d.getDay()], date: String(d.getDate()) };
-}
 
 export default function StudentSchedule() {
   const navigate = useNavigate();
@@ -24,7 +23,11 @@ export default function StudentSchedule() {
   const [studentId, setStudentId] = useState(null);
   const [studentName, setStudentName] = useState('');
   const [periodId, setPeriodId] = useState(null);
+  const [periodName, setPeriodName] = useState('');
+  const [periodStart, setPeriodStart] = useState('');
+  const [periodEnd, setPeriodEnd] = useState('');
   const [periodStatus, setPeriodStatus] = useState(null);
+  const [schedulePublished, setSchedulePublished] = useState(false);
   const [readonly, setReadonly] = useState(false);
   const [scheduleMessage, setScheduleMessage] = useState(null);
   const [dates, setDates] = useState([]);
@@ -33,17 +36,34 @@ export default function StudentSchedule() {
   const [lockedByDate, setLockedByDate] = useState({});
   const [lessonsByDate, setLessonsByDate] = useState({});
   const [timeSlots, setTimeSlots] = useState([]);
+  const [subjectPlans, setSubjectPlans] = useState([]);
+  const [pendingRequests, setPendingRequests] = useState([]);
+
+  const [proposalMode, setProposalMode] = useState(false);
+  const [proposalByDate, setProposalByDate] = useState({});
+  const [proposalReason, setProposalReason] = useState('');
 
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState(null);
   const [message, setMessage] = useState(null);
 
+  const canRequestChanges = readonly && (schedulePublished || periodStatus === 'FINALIZED');
+
   useEffect(() => {
     if (!session?.student_id) return;
     setStudentId(session.student_id);
     setStudentName(session.name ?? '生徒');
   }, [session]);
+
+  const loadPendingRequests = useCallback(async (pid, sid) => {
+    const res = await fetch(`/api/admin/change-requests?period_id=${pid}&status=PENDING`);
+    if (!res.ok) return;
+    const data = await res.json();
+    setPendingRequests(
+      (data.requests ?? []).filter((r) => r.role === 'student' && r.entity_id === sid),
+    );
+  }, []);
 
   const fetchSchedule = useCallback(async (sid, pid) => {
     setIsLoading(true);
@@ -55,15 +75,20 @@ export default function StudentSchedule() {
       if (!res.ok) throw new Error('スケジュールの取得に失敗しました');
       const data = await res.json();
       setPeriodStatus(data.period_status);
+      setPeriodName(data.period_name ?? '');
+      setPeriodStart(data.period_start_date ?? '');
+      setPeriodEnd(data.period_end_date ?? '');
+      setSchedulePublished(Boolean(data.schedule_published));
       setReadonly(data.readonly);
       setScheduleMessage(data.message);
       setTimeSlots(data.time_slots ?? []);
+      setSubjectPlans(data.subject_plans ?? []);
       const byDate = {};
       const locked = {};
       const lessons = {};
       const dateList = data.dates.map((d) => {
         byDate[d.date] = apiSlotsToState(d.slots);
-        locked[d.date] = d.locked_slots;
+        locked[d.date] = d.locked_slots ?? {};
         lessons[d.date] = d.confirmed_lessons ?? [];
         return d.date;
       });
@@ -72,44 +97,103 @@ export default function StudentSchedule() {
       setLessonsByDate(lessons);
       setDates(dateList);
       setSelectedDate((prev) => prev ?? dateList[0] ?? null);
+      await loadPendingRequests(pid, sid);
     } catch (err) {
       setError(err.message);
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [loadPendingRequests]);
 
   useEffect(() => {
     if (!studentId) return;
-    const init = async () => {
-      const res = await fetch('/api/admin/periods');
-      if (!res.ok) return;
-      const data = await res.json();
-      const pid = data.active_period_id ?? data.periods[0]?.id;
-      if (pid) {
-        setPeriodId(pid);
-        await fetchSchedule(studentId, pid);
-      } else {
-        setError('募集期間が設定されていません');
-        setIsLoading(false);
-      }
-    };
-    init();
+    fetch('/api/admin/periods')
+      .then((r) => r.json())
+      .then((data) => {
+        const pid = data.active_period_id ?? data.periods[0]?.id;
+        if (pid) {
+          setPeriodId(pid);
+          fetchSchedule(studentId, pid);
+        } else {
+          setError('募集期間が設定されていません');
+          setIsLoading(false);
+        }
+      });
   }, [studentId, fetchSchedule]);
 
-  const shiftData = selectedDate ? scheduleByDate[selectedDate] ?? { 1: '', 2: '', 3: '', 4: '' } : {};
-  const lockedSlots = selectedDate ? lockedByDate[selectedDate] ?? {} : {};
-  const confirmedLessons = selectedDate ? lessonsByDate[selectedDate] ?? [] : [];
+  const startProposal = () => {
+    setProposalByDate(JSON.parse(JSON.stringify(scheduleByDate)));
+    setProposalReason('');
+    setProposalMode(true);
+    setMessage(null);
+    setError(null);
+  };
+
+  const cancelProposal = () => {
+    setProposalMode(false);
+    setProposalByDate({});
+    setProposalReason('');
+  };
+
+  const proposalChanges = useMemo(
+    () => collectProposalChanges(scheduleByDate, proposalByDate, lockedByDate),
+    [scheduleByDate, proposalByDate, lockedByDate],
+  );
 
   const handleStatusChange = (slotNum, symbol) => {
-    if (readonly || lockedSlots[String(slotNum)]) return;
+    if (readonly || !selectedDate) return;
+    const locked = lockedByDate[selectedDate]?.[String(slotNum)];
+    if (locked) return;
     setScheduleByDate((prev) => ({
       ...prev,
       [selectedDate]: {
         ...prev[selectedDate],
-        [slotNum]: prev[selectedDate][slotNum] === symbol ? '' : symbol,
+        [slotNum]: symbol,
       },
     }));
+  };
+
+  const handleProposalSlotChange = (slotNum, symbol) => {
+    if (!selectedDate) return;
+    setProposalByDate((prev) => ({
+      ...prev,
+      [selectedDate]: {
+        ...(prev[selectedDate] ?? EMPTY_SLOTS),
+        [slotNum]: symbol,
+      },
+    }));
+  };
+
+  const handleSubmitProposal = async () => {
+    if (!studentId || !periodId || proposalChanges.length === 0) {
+      setError('変更がありません');
+      return;
+    }
+    setIsSubmitting(true);
+    setError(null);
+    try {
+      const { results, errors } = await submitChangeProposal({
+        periodId,
+        role: 'student',
+        entityId: studentId,
+        changes: proposalChanges,
+        reason: proposalReason,
+      });
+      if (errors.length && !results.length) {
+        throw new Error(errors[0]);
+      }
+      setMessage(
+        errors.length
+          ? `${results.length} 件送信（${errors.length} 件はスキップ）`
+          : `変更提案書を ${results.length} 件送信しました。教室長の承認をお待ちください。`,
+      );
+      setProposalMode(false);
+      await loadPendingRequests(periodId, studentId);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleBulkSubmit = async () => {
@@ -120,7 +204,7 @@ export default function StudentSchedule() {
     try {
       const submissions = dates.map((date) => ({
         date,
-        slots: stateToApiSlots(scheduleByDate[date] ?? { 1: '', 2: '', 3: '', 4: '' }),
+        slots: stateToApiSlots(scheduleByDate[date] ?? EMPTY_SLOTS),
       }));
       const res = await fetch('/api/shifts/bulk', {
         method: 'PATCH',
@@ -136,8 +220,7 @@ export default function StudentSchedule() {
         const body = await res.json().catch(() => ({}));
         throw new Error(body.detail || '提出に失敗しました');
       }
-      const data = await res.json();
-      setMessage(data.message);
+      setMessage((await res.json()).message);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -145,94 +228,154 @@ export default function StudentSchedule() {
     }
   };
 
+  const shiftData = selectedDate
+    ? (proposalMode ? proposalByDate[selectedDate] : scheduleByDate[selectedDate]) ?? EMPTY_SLOTS
+    : EMPTY_SLOTS;
+  const originalDay = selectedDate ? scheduleByDate[selectedDate] ?? EMPTY_SLOTS : EMPTY_SLOTS;
+  const lockedSlots = selectedDate ? lockedByDate[selectedDate] ?? {} : {};
+  const confirmedLessons = selectedDate ? lessonsByDate[selectedDate] ?? [] : [];
+  const pendingBySlot = {};
+  pendingRequests.forEach((r) => {
+    if (r.date === selectedDate) pendingBySlot[r.slot] = r;
+  });
+
   if (!isReady || !studentId) return null;
 
   return (
-    <div className="min-h-screen bg-gray-100 flex justify-center p-4 font-sans">
-      <div className="w-full max-w-[400px] bg-gray-50 rounded-[2rem] shadow-xl overflow-hidden border-4 border-white flex flex-col relative min-h-[800px]">
-        <header className="bg-emerald-800 text-white pt-10 pb-4 px-6 rounded-b-3xl shadow-md flex justify-between items-center">
-          <button type="button" onClick={() => { clearSession(); navigate('/'); }} className="text-sm bg-white/20 px-3 py-1 rounded-lg">← 戻る</button>
-          <div className="text-center">
-            <h1 className="text-lg font-bold">生徒スケジュール</h1>
-            <p className="text-xs text-emerald-200">{studentName}</p>
-            {periodStatus && <p className="text-xs text-emerald-300 mt-1">{periodStatus}{readonly ? '（確定済み）' : ''}</p>}
+    <div className="min-h-screen bg-slate-100 flex justify-center p-4 font-sans">
+      <div className="w-full max-w-lg bg-white rounded-3xl shadow-xl overflow-hidden flex flex-col min-h-[90vh]">
+        <header className="bg-gradient-to-br from-emerald-700 to-emerald-900 text-white px-5 pt-8 pb-5">
+          <div className="flex items-center justify-between mb-4">
+            <button type="button" onClick={() => { clearSession(); navigate('/'); }} className="text-sm bg-white/15 hover:bg-white/25 px-3 py-1.5 rounded-lg">← ログアウト</button>
+            {!proposalMode && canRequestChanges && (
+              <button type="button" onClick={startProposal} className="text-sm bg-amber-400 hover:bg-amber-300 text-amber-950 px-3 py-1.5 rounded-lg font-bold">
+                変更の提案書作成
+              </button>
+            )}
+            {proposalMode && (
+              <button type="button" onClick={cancelProposal} className="text-sm bg-white/15 hover:bg-white/25 px-3 py-1.5 rounded-lg">キャンセル</button>
+            )}
           </div>
-          <div className="w-8" />
+          <h1 className="text-xl font-bold">{proposalMode ? '変更提案書' : '生徒スケジュール'}</h1>
+          <p className="text-emerald-200 text-sm mt-1">{studentName}</p>
         </header>
 
-        <main className="flex-1 overflow-y-auto p-4">
-          {error && <p className="text-red-500 text-sm mb-4 text-center">{error}</p>}
-          {message && <p className="text-emerald-600 text-sm mb-4 text-center font-bold">{message}</p>}
-          {scheduleMessage && readonly && (
-            <div className="bg-emerald-100 border border-emerald-300 rounded-xl p-4 mb-4 text-emerald-800 text-sm font-bold text-center">
+        <main className="flex-1 overflow-y-auto p-4 bg-slate-50">
+          <PeriodBanner
+            periodName={periodName}
+            periodStart={periodStart}
+            periodEnd={periodEnd}
+            periodStatus={periodStatus}
+            schedulePublished={schedulePublished}
+          />
+
+          {error && <p className="text-red-600 text-sm mb-3 p-3 bg-red-50 rounded-xl">{error}</p>}
+          {message && <p className="text-emerald-700 text-sm mb-3 p-3 bg-emerald-50 rounded-xl font-bold">{message}</p>}
+
+          {proposalMode && (
+            <div className="mb-4 p-4 bg-amber-50 border border-amber-200 rounded-2xl text-sm text-amber-900">
+              <p className="font-bold">変更したい都合を編集してください</p>
+              <p className="mt-1 text-amber-800">日付タブで日を切り替えて編集できます。送信後、教室長が承認します。</p>
+              {proposalChanges.length > 0 && (
+                <p className="mt-2 font-bold text-amber-950">{proposalChanges.length} コマに変更があります</p>
+              )}
+            </div>
+          )}
+
+          {!proposalMode && scheduleMessage && readonly && (
+            <div className="mb-4 p-4 bg-emerald-50 border border-emerald-200 rounded-2xl text-sm text-emerald-900">
               {scheduleMessage}
             </div>
           )}
 
-          <div className="flex gap-2 mb-4 overflow-x-auto pb-2">
-            {dates.map((isoDate) => {
-              const { day, date } = parseDateTab(isoDate);
-              return (
-                <button
-                  key={isoDate}
-                  type="button"
-                  onClick={() => setSelectedDate(isoDate)}
-                  className={`min-w-[60px] rounded-xl p-2 text-center transition-all ${selectedDate === isoDate ? 'bg-emerald-600 text-white shadow-md' : 'bg-white text-gray-500 border border-gray-200'}`}
-                >
-                  <div className="text-xs">{day}</div>
-                  <div className="text-xl font-bold">{date}</div>
-                </button>
-              );
-            })}
-          </div>
-
-          {!readonly && <ScheduleLegend />}
-
-          {readonly && confirmedLessons.length > 0 && (
-            <div className="mb-4 space-y-2">
-              <p className="text-sm font-bold text-gray-700">確定した授業</p>
-              {confirmedLessons.map((lesson) => (
-                <div key={lesson.slot} className="bg-white border border-emerald-200 rounded-xl p-3 shadow-sm">
-                  <div className="text-xs text-gray-400">{lesson.slot}コマ目</div>
-                  <div className="font-bold text-emerald-800">{lesson.subject}</div>
-                  <div className="text-sm text-gray-600">{lesson.teacher_name} 先生</div>
-                </div>
-              ))}
-            </div>
-          )}
+          <DateTabs dates={dates} selectedDate={selectedDate} onSelect={setSelectedDate} accent="emerald" />
 
           {isLoading ? (
-            <p className="text-gray-500 text-center py-8">読み込み中...</p>
+            <p className="text-gray-500 text-center py-12">読み込み中...</p>
+          ) : proposalMode ? (
+            <>
+              <StudentScheduleLegend />
+              <div className="space-y-3">
+                {(timeSlots.length ? timeSlots : [1, 2, 3, 4, 5, 6].map((s) => ({ slot: s, start: '', end: '' }))).map(({ slot, start, end }) => (
+                  <StudentSlotRow
+                    key={slot}
+                    period={slot}
+                    time={{ start, end }}
+                    status={shiftData[slot]}
+                    locked={lockedSlots[String(slot)]}
+                    readonly={false}
+                    disabled={isSubmitting}
+                    changed={originalDay[slot] !== shiftData[slot]}
+                    subjectPlans={subjectPlans}
+                    onStatusChange={(sym) => handleProposalSlotChange(slot, sym)}
+                  />
+                ))}
+              </div>
+            </>
+          ) : readonly ? (
+            <DayScheduleOverview
+              timeSlots={timeSlots}
+              slots={shiftData}
+              lessons={confirmedLessons}
+              lockedSlots={lockedSlots}
+              role="student"
+              pendingBySlot={pendingBySlot}
+            />
           ) : (
-            <div className="space-y-3">
-              {(timeSlots.length ? timeSlots : [{ slot: 1, start: '13:30', end: '14:50' }]).map(({ slot, start, end }) => (
-                <TimeSlotRow
-                  key={slot}
-                  period={slot}
-                  time={{ start, end }}
-                  status={shiftData[slot]}
-                  locked={lockedSlots[String(slot)]}
-                  readonly={readonly}
-                  disabled={isSubmitting}
-                  onStatusChange={(sym) => handleStatusChange(slot, sym)}
-                />
-              ))}
-            </div>
+            <>
+              <StudentScheduleLegend />
+              <div className="space-y-3">
+                {(timeSlots.length ? timeSlots : [1, 2, 3, 4, 5, 6].map((s) => ({ slot: s, start: '', end: '' }))).map(({ slot, start, end }) => (
+                  <StudentSlotRow
+                    key={slot}
+                    period={slot}
+                    time={{ start, end }}
+                    status={shiftData[slot]}
+                    locked={lockedSlots[String(slot)]}
+                    readonly={false}
+                    disabled={isSubmitting}
+                    subjectPlans={subjectPlans}
+                    onStatusChange={(sym) => handleStatusChange(slot, sym)}
+                  />
+                ))}
+              </div>
+            </>
           )}
         </main>
 
-        {!readonly && periodStatus === 'COLLECTING' && (
-          <footer className="bg-white p-4 border-t border-gray-100">
+        <footer className="p-4 bg-white border-t border-gray-100 space-y-3">
+          {proposalMode ? (
+            <>
+              <label className="block">
+                <span className="text-xs font-bold text-gray-600">変更理由（任意）</span>
+                <textarea
+                  value={proposalReason}
+                  onChange={(e) => setProposalReason(e.target.value)}
+                  rows={2}
+                  placeholder="例: 6/12の3コマ目が都合悪くなりました"
+                  className="mt-1 w-full border border-gray-300 rounded-xl px-3 py-2 text-sm"
+                />
+              </label>
+              <button
+                type="button"
+                onClick={handleSubmitProposal}
+                disabled={isSubmitting || proposalChanges.length === 0}
+                className="w-full bg-amber-500 hover:bg-amber-600 disabled:bg-amber-300 text-amber-950 font-bold py-4 rounded-2xl shadow-lg"
+              >
+                {isSubmitting ? '送信中...' : `提案書を送信（${proposalChanges.length}件）`}
+              </button>
+            </>
+          ) : !readonly && periodStatus === 'COLLECTING' && (
             <button
               type="button"
               onClick={handleBulkSubmit}
               disabled={isLoading || isSubmitting}
-              className="w-full bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-400 text-white font-bold py-4 rounded-xl shadow-lg"
+              className="w-full bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-400 text-white font-bold py-4 rounded-2xl shadow-lg"
             >
               {isSubmitting ? '提出中...' : '期間を一括提出する'}
             </button>
-          </footer>
-        )}
+          )}
+        </footer>
       </div>
     </div>
   );

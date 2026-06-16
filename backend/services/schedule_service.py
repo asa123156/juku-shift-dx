@@ -6,28 +6,64 @@ from services.period_store import (
     find_period_for_date,
     get_entity_base_day,
     get_period,
+    open_dates_for_period,
     iter_dates,
 )
+from services.schedule_publish_store import is_schedule_published, is_teacher_schedule_published
 from services.shift_store import get_teacher_submission, save_teacher_bulk
-from services.slot_timing import generate_time_slots
+from services.slot_timing import SLOT_KEYS, SLOT_NUMS, generate_time_slots
+from services.student_plan_store import list_plans_for_student
+from services.student_slot_codec import validate_student_slot
 from services.student_store import get_student_submission, save_student_bulk
 
 
-def _confirmed_lessons(student_id: int, iso_date: str, finalized: bool) -> list[dict]:
-    if not finalized:
+def _confirmed_lessons(role: str, entity_id: int, iso_date: str, show: bool) -> list[dict]:
+    if not show:
         return []
+    id_key = "student_id" if role == "student" else "teacher_id"
     lessons = []
     for row in get_assignments_for_date(iso_date):
-        if row["student_id"] != student_id:
+        if row[id_key] != entity_id:
             continue
         lessons.append(
             {
                 "slot": row["slot"],
                 "teacher_name": row["teacher_name"],
+                "student_name": row["student_name"],
                 "subject": row["subject"],
+                "lesson_kind": "講習",
             }
         )
     return sorted(lessons, key=lambda x: x["slot"])
+
+
+def _teacher_slot_lanes_for_day(
+    entity_id: int,
+    iso_date: str,
+    merged_slots: dict[str, str],
+    show: bool,
+) -> list[dict]:
+    from services.teacher_slot_lanes import build_teacher_lanes
+
+    if not show:
+        return []
+    assignments = [
+        a for a in get_assignments_for_date(iso_date) if a["teacher_id"] == entity_id
+    ]
+    by_slot: dict[int, list] = {}
+    for row in assignments:
+        by_slot.setdefault(int(row["slot"]), []).append(row)
+
+    result: list[dict] = []
+    for slot_num in SLOT_NUMS:
+        avail = merged_slots.get(str(slot_num), "")
+        result.append(
+            {
+                "slot": slot_num,
+                "lanes": build_teacher_lanes(avail, by_slot.get(slot_num, [])),
+            }
+        )
+    return result
 
 
 def _merge_day(
@@ -37,6 +73,7 @@ def _merge_day(
     iso_date: str,
     readonly: bool,
     period_status: PeriodStatus,
+    schedule_published: bool = False,
 ) -> ScheduleDay:
     base = get_entity_base_day(period_id, role, entity_id, iso_date)
     if role == "teacher":
@@ -45,9 +82,9 @@ def _merge_day(
         submitted = get_student_submission(entity_id, iso_date)
 
     show_fixed = period_status == "FINALIZED"
-    merged: dict[str, SlotSymbol] = empty_slots()
+    merged: dict[str, str] = empty_slots()  # type: ignore[assignment]
     locked: dict[str, bool] = {}
-    for key in ("1", "2", "3", "4"):
+    for key in SLOT_KEYS:
         if show_fixed and base[key] == "◎":
             merged[key] = "◎"
             locked[key] = True
@@ -58,13 +95,20 @@ def _merge_day(
             merged[key] = base[key] if show_fixed else ""
             locked[key] = False
 
-    confirmed = _confirmed_lessons(entity_id, iso_date, finalized=show_fixed and role == "student")
+    show_lessons = show_fixed or schedule_published
+    confirmed = _confirmed_lessons(role, entity_id, iso_date, show=show_lessons)
+    teacher_slot_lanes = (
+        _teacher_slot_lanes_for_day(entity_id, iso_date, merged, show=show_lessons)
+        if role == "teacher"
+        else []
+    )
     return ScheduleDay(
         date=iso_date,
         slots=merged,
         locked_slots=locked,
         readonly=readonly,
         confirmed_lessons=confirmed,
+        teacher_slot_lanes=teacher_slot_lanes,
     )
 
 
@@ -73,7 +117,7 @@ def build_merged_slots_for_export(
     entity_id: int,
     period_id: int,
     iso_date: str,
-) -> dict[str, SlotSymbol]:
+) -> dict[str, str]:
     period = get_period(period_id)
     base = get_entity_base_day(period_id, role, entity_id, iso_date)
     if role == "teacher":
@@ -81,8 +125,8 @@ def build_merged_slots_for_export(
     else:
         submitted = get_student_submission(entity_id, iso_date)
 
-    merged: dict[str, SlotSymbol] = empty_slots()
-    for key in ("1", "2", "3", "4"):
+    merged: dict[str, str] = empty_slots()  # type: ignore[assignment]
+    for key in SLOT_KEYS:
         if period.status == "FINALIZED" and base[key] == "◎":
             merged[key] = "◎"
         elif submitted is not None:
@@ -101,15 +145,39 @@ def assert_period_collecting(period_id: int) -> None:
         )
 
 
+def assert_entity_editable(role: str, entity_id: int, period_id: int) -> None:
+    """送付済み・確定後は直接編集不可（変更申請を使う）。"""
+    period = get_period(period_id)
+    if period.status == "FINALIZED":
+        raise HTTPException(
+            status_code=409,
+            detail="確定済みのため直接編集できません。変更申請を行ってください。",
+        )
+    if role == "student" and is_schedule_published(period_id, entity_id):
+        raise HTTPException(
+            status_code=409,
+            detail="スケジュール送付済みのため直接編集できません。変更申請を行ってください。",
+        )
+    if role == "teacher" and is_teacher_schedule_published(period_id, entity_id):
+        raise HTTPException(
+            status_code=409,
+            detail="スケジュール送付済みのため直接編集できません。変更申請を行ってください。",
+        )
+
+
 def bulk_save_submissions(
     role: str,
     entity_id: int,
     period_id: int,
     submissions: list[dict],
 ) -> list[str]:
-    period = get_period(period_id)
+    assert_entity_editable(role, entity_id, period_id)
     assert_period_collecting(period_id)
-    allowed_dates = set(iter_dates(period.start_date, period.end_date))
+    period = get_period(period_id)
+    allowed_dates = set(open_dates_for_period(period))
+    student_subjects: set[str] | None = None
+    if role == "student":
+        student_subjects = {p["subject"] for p in list_plans_for_student(period_id, entity_id)}
 
     validated: list[dict] = []
     for row in submissions:
@@ -117,20 +185,28 @@ def bulk_save_submissions(
         if iso_date not in allowed_dates:
             raise HTTPException(status_code=400, detail=f"Date {iso_date} is outside period range")
         base = get_entity_base_day(period_id, role, entity_id, iso_date)
-        slots: dict[str, SlotSymbol] = empty_slots()
-        for key in ("1", "2", "3", "4"):
+        slots: dict[str, str] = empty_slots()  # type: ignore[assignment]
+        for key in SLOT_KEYS:
             if base[key] == "◎":
                 slots[key] = "◎"
             else:
                 val = row["slots"][key]
-                if val == "◎":
-                    raise HTTPException(
-                        status_code=400,
-                        detail=f"Cannot set ◎ on slot {key} for {iso_date}; fixed by admin",
-                    )
-                if val not in ("×", ""):
-                    raise HTTPException(status_code=400, detail=f"Invalid symbol on slot {key}")
-                slots[key] = val
+                if role == "student":
+                    if val == "◎":
+                        raise HTTPException(
+                            status_code=400,
+                            detail=f"Cannot set ◎ on slot {key} for {iso_date}; fixed by admin",
+                        )
+                    slots[key] = validate_student_slot(val, student_subjects)
+                else:
+                    if val == "◎":
+                        raise HTTPException(
+                            status_code=400,
+                            detail=f"Cannot set ◎ on slot {key} for {iso_date}; fixed by admin",
+                        )
+                    if val not in ("×", ""):
+                        raise HTTPException(status_code=400, detail=f"Invalid symbol on slot {key}")
+                    slots[key] = val
         validated.append({"date": iso_date, "slots": slots})
 
     if role == "teacher":
@@ -140,22 +216,39 @@ def bulk_save_submissions(
 
 def build_my_schedule(role: str, entity_id: int, period_id: int) -> dict:
     period = get_period(period_id)
-    readonly = period.status == "FINALIZED"
+    if role == "student":
+        published = is_schedule_published(period_id, entity_id)
+    else:
+        published = is_teacher_schedule_published(period_id, entity_id)
+    readonly = period.status == "FINALIZED" or published
     dates = [
-        _merge_day(role, entity_id, period_id, iso_date, readonly, period.status).model_dump()
-        for iso_date in iter_dates(period.start_date, period.end_date)
+        _merge_day(
+            role, entity_id, period_id, iso_date, readonly, period.status, schedule_published=published
+        ).model_dump()
+        for iso_date in open_dates_for_period(period)
     ]
     message = None
-    if readonly and role == "student":
-        message = "シフトが確定しました。以下が確定スケジュールです。"
+    if readonly:
+        if published and period.status != "FINALIZED":
+            message = "担当者がスケジュールを確定しました。以下が確定スケジュールです。"
+        else:
+            message = "シフトが確定しました。以下が確定スケジュールです。"
+        message += " 変更が必要な場合は変更申請を行ってください。"
+    subject_plans: list[dict] = []
+    if role == "student":
+        subject_plans = list_plans_for_student(period_id, entity_id)
     return {
         "role": role,
         "entity_id": entity_id,
         "period_id": period_id,
         "period_name": period.name,
+        "period_start_date": period.start_date,
+        "period_end_date": period.end_date,
         "period_status": period.status,
+        "schedule_published": published,
         "readonly": readonly,
         "time_slots": generate_time_slots(),
+        "subject_plans": subject_plans,
         "message": message,
         "dates": dates,
     }

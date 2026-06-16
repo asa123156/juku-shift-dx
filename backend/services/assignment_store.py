@@ -123,6 +123,36 @@ def reset_assignments_for_tests() -> None:
         db.commit()
 
 
+def reset_assignments_from_json() -> tuple[int, int]:
+    """デモ用: assignments.json / assignment-requests.json から再投入する。"""
+    reset_assignments_for_tests()
+    raw_a = _read_json(ASSIGNMENTS_PATH)
+    raw_r = _read_json(REQUESTS_PATH)
+    assign_count = 0
+    request_count = 0
+    with _session() as db:
+        if raw_a:
+            _import_assignments_from_json(db, raw_a)
+            assign_count = sum(len(v) for v in raw_a.values() if isinstance(v, list))
+        if raw_r:
+            _import_requests_from_json(db, raw_r)
+            request_count = sum(len(v) for v in raw_r.values() if isinstance(v, list))
+        db.commit()
+    return assign_count, request_count
+
+
+def get_assignments_between(start: str, end: str) -> list[dict]:
+    start_d = date.fromisoformat(start)
+    end_d = date.fromisoformat(end)
+    with _session() as db:
+        rows = db.scalars(
+            select(AssignmentRow)
+            .where(AssignmentRow.slot_date >= start_d, AssignmentRow.slot_date <= end_d)
+            .order_by(AssignmentRow.id)
+        ).all()
+    return deepcopy([_assignment_to_dict(row) for row in rows])
+
+
 def get_assignments_for_date(iso_date: str) -> list[dict]:
     target_date = date.fromisoformat(iso_date)
     with _session() as db:
@@ -182,15 +212,58 @@ def add_assignment(record: AssignmentRecord) -> None:
         db.commit()
 
 
-def remove_assignment_at_slot(iso_date: str, teacher_id: int, slot: int) -> None:
+def remove_assignment_at_slot(
+    iso_date: str,
+    teacher_id: int,
+    slot: int,
+    student_id: int | None = None,
+) -> None:
     target_date = date.fromisoformat(iso_date)
     with _session() as db:
-        db.query(AssignmentRow).filter(
+        query = db.query(AssignmentRow).filter(
             AssignmentRow.slot_date == target_date,
             AssignmentRow.teacher_id == teacher_id,
             AssignmentRow.slot == slot,
-        ).delete(synchronize_session=False)
+        )
+        if student_id is not None:
+            query = query.filter(AssignmentRow.student_id == student_id)
+        query.delete(synchronize_session=False)
         db.commit()
+
+
+def cancel_assignment_at_slot(
+    iso_date: str,
+    teacher_id: int,
+    slot: int,
+    student_id: int | None = None,
+) -> dict | None:
+    """割当を解除し、未割当リクエストに戻す。"""
+    target_date = date.fromisoformat(iso_date)
+    with _session() as db:
+        query = select(AssignmentRow).where(
+            AssignmentRow.slot_date == target_date,
+            AssignmentRow.teacher_id == teacher_id,
+            AssignmentRow.slot == slot,
+        )
+        if student_id is not None:
+            query = query.where(AssignmentRow.student_id == student_id)
+        row = db.scalars(query).first()
+        if row is None:
+            return None
+        record = _assignment_to_dict(row)
+        db.delete(row)
+        db.commit()
+    append_assignment_requests(
+        iso_date,
+        [
+            {
+                "student_id": record["student_id"],
+                "student_name": record["student_name"],
+                "subject": record["subject"],
+            }
+        ],
+    )
+    return record
 
 
 def clear_requests_fulfilled(iso_date: str, fulfilled_student_ids: set[int]) -> None:
@@ -201,6 +274,17 @@ def clear_requests_fulfilled(iso_date: str, fulfilled_student_ids: set[int]) -> 
         db.query(AssignmentRequestRow).filter(
             AssignmentRequestRow.slot_date == target_date,
             AssignmentRequestRow.student_id.in_(fulfilled_student_ids),
+        ).delete(synchronize_session=False)
+        db.commit()
+
+
+def clear_request_fulfilled(iso_date: str, student_id: int, subject: str) -> None:
+    target_date = date.fromisoformat(iso_date)
+    with _session() as db:
+        db.query(AssignmentRequestRow).filter(
+            AssignmentRequestRow.slot_date == target_date,
+            AssignmentRequestRow.student_id == student_id,
+            AssignmentRequestRow.subject == subject,
         ).delete(synchronize_session=False)
         db.commit()
 

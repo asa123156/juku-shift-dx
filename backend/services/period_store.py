@@ -9,6 +9,7 @@ from config import DATA_DIR
 from database import SessionLocal
 from models import AppSetting, PeriodBaseSlot, Period as PeriodRow
 from schemas.period import Period, PeriodStatus, empty_slots
+from services.slot_timing import SLOT_KEYS
 
 PERIODS_PATH = DATA_DIR / "periods.json"
 BASES_PATH = DATA_DIR / "period-bases.json"
@@ -31,12 +32,14 @@ def _read_json(path) -> dict:
 
 
 def _to_schema(row: PeriodRow) -> Period:
+    closed = row.closed_dates if isinstance(row.closed_dates, list) else []
     return Period(
         id=row.id,
         name=row.name,
         start_date=row.start_date.isoformat(),
         end_date=row.end_date.isoformat(),
         status=row.status,
+        closed_dates=sorted(closed),
     )
 
 
@@ -68,6 +71,20 @@ def iter_dates(start: str, end: str) -> list[str]:
     return out
 
 
+def iter_open_dates(start: str, end: str, closed_dates: list[str] | None = None) -> list[str]:
+    """期間内の開校日（日曜除外・closed_dates も除外）。"""
+    closed = set(closed_dates or [])
+    return [
+        d
+        for d in iter_dates(start, end)
+        if date.fromisoformat(d).weekday() != 6 and d not in closed
+    ]
+
+
+def open_dates_for_period(period: Period) -> list[str]:
+    return iter_open_dates(period.start_date, period.end_date, period.closed_dates)
+
+
 def list_periods() -> tuple[list[Period], int | None]:
     with _session() as db:
         rows = db.scalars(select(PeriodRow).order_by(PeriodRow.id)).all()
@@ -92,13 +109,24 @@ def find_period_for_date(iso_date: str) -> Period | None:
     return None
 
 
-def create_period(name: str, start_date: str, end_date: str) -> Period:
+def create_period(name: str, start_date: str, end_date: str, closed_dates: list[str] | None = None) -> Period:
+    start_d = date.fromisoformat(start_date)
+    end_d = date.fromisoformat(end_date)
+    closed = sorted(set(closed_dates or []))
+    for iso in closed:
+        d = date.fromisoformat(iso)
+        if d < start_d or d > end_d:
+            raise HTTPException(status_code=400, detail=f"休校日 {iso} が期間外です")
+        if d.weekday() == 6:
+            raise HTTPException(status_code=400, detail=f"日曜 {iso} は自動で休校のため指定不要です")
+
     with _session() as db:
         row = PeriodRow(
             name=name,
-            start_date=date.fromisoformat(start_date),
-            end_date=date.fromisoformat(end_date),
+            start_date=start_d,
+            end_date=end_d,
             status="DRAFT",
+            closed_dates=closed,
         )
         db.add(row)
         db.flush()
@@ -107,6 +135,16 @@ def create_period(name: str, start_date: str, end_date: str) -> Period:
         db.refresh(row)
         period = _to_schema(row)
     return period
+
+
+def set_active_period(period_id: int) -> Period:
+    with _session() as db:
+        row = db.get(PeriodRow, period_id)
+        if row is None:
+            raise HTTPException(status_code=404, detail=f"Period id={period_id} not found")
+        _set_active_period_id(db, period_id)
+        db.commit()
+        return _to_schema(row)
 
 
 def update_period_status(period_id: int, status: PeriodStatus) -> Period:
@@ -169,7 +207,7 @@ def _import_bases_from_json(db: Session, raw: dict) -> None:
                         continue
                     slot_date = date.fromisoformat(iso_date)
                     for slot_key, symbol in slots.items():
-                        if slot_key not in ("1", "2", "3", "4") or not symbol:
+                        if slot_key not in SLOT_KEYS or not symbol:
                             continue
                         db.add(
                             PeriodBaseSlot(
@@ -197,11 +235,12 @@ def seed_period_bases_if_empty() -> None:
 
 def reset_periods_for_tests() -> None:
     """テスト用: periods / app_settings をクリアし JSON から再投入。"""
-    from database import Base, engine
+    from database import Base, engine, migrate_sqlite_schema
 
     import models  # noqa: F401 — register ORM models
 
     Base.metadata.create_all(bind=engine)
+    migrate_sqlite_schema()
     with _session() as db:
         db.query(PeriodBaseSlot).delete()
         db.query(PeriodRow).delete()

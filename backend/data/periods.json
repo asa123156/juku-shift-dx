@@ -4,9 +4,9 @@
   "items": [
     {
       "id": 1,
-      "name": "2026年6月シフト募集",
-      "start_date": "2026-06-10",
-      "end_date": "2026-06-12",
+      "name": "2026年6月 夏期講習",
+      "start_date": "2026-06-09",
+      "end_date": "2026-06-20",
       "status": "COLLECTING"
     }
   ]

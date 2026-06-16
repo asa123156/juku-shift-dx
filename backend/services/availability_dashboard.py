@@ -3,7 +3,7 @@ from copy import deepcopy
 from services.dashboard_builder import build_shift_dashboard_base_only
 from services.period_store import find_period_for_date, get_entity_base_day
 from services.shift_store import apply_teacher_submissions, compute_metrics
-from services.slot_timing import generate_time_slots
+from services.slot_timing import SLOT_NUMS, generate_time_slots
 
 AvailabilitySymbol = str  # "◎" | "×" | ""
 
@@ -29,13 +29,13 @@ def build_availability_dashboard(iso_date: str) -> dict:
     if finalized and period is not None:
         for teacher in merged.get("teachers", []):
             tid = teacher["id"]
-            for slot_num in range(1, 5):
+            for slot_num in SLOT_NUMS:
                 day = get_entity_base_day(period.id, "teacher", tid, iso_date)
                 if day[str(slot_num)] == "◎":
                     teacher[f"s{slot_num}"] = "◎"
 
     for teacher in merged.get("teachers", []):
-        for slot_num in range(1, 5):
+        for slot_num in SLOT_NUMS:
             field = f"s{slot_num}"
             teacher[field] = to_availability_symbol(teacher.get(field, ""))
 

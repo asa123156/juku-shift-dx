@@ -1,6 +1,6 @@
-from datetime import date
+from datetime import date, datetime
 
-from sqlalchemy import JSON, Date, ForeignKey, String, UniqueConstraint
+from sqlalchemy import JSON, Date, ForeignKey, LargeBinary, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from database import Base
@@ -25,6 +25,7 @@ class Period(Base):
     start_date: Mapped[date] = mapped_column(Date, nullable=False)
     end_date: Mapped[date] = mapped_column(Date, nullable=False)
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="DRAFT")
+    closed_dates: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
 
 
 class PeriodBaseSlot(Base):
@@ -90,7 +91,7 @@ class ShiftSubmission(Base):
     entity_id: Mapped[int] = mapped_column(nullable=False)
     slot_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
     slot_key: Mapped[str] = mapped_column(String(1), nullable=False)
-    symbol: Mapped[str] = mapped_column(String(2), nullable=False, default="")
+    symbol: Mapped[str] = mapped_column(String(64), nullable=False, default="")
 
 
 class Assignment(Base):
@@ -109,7 +110,7 @@ class Assignment(Base):
 
 
 class AssignmentRequest(Base):
-    """未割当の割当リクエスト（CSV 取込）"""
+    """未割当の割当リクエスト（日付 × 生徒 × 教科）"""
 
     __tablename__ = "assignment_requests"
     __table_args__ = (
@@ -128,6 +129,26 @@ class AssignmentRequest(Base):
     subject: Mapped[str] = mapped_column(String(255), nullable=False)
 
 
+class StudentSubjectPlan(Base):
+    """講習期間ごとの生徒希望（教科 × コマ数）— 教室長が設定"""
+
+    __tablename__ = "student_subject_plans"
+    __table_args__ = (
+        UniqueConstraint(
+            "period_id",
+            "student_id",
+            "subject",
+            name="uq_student_subject_plan",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    period_id: Mapped[int] = mapped_column(ForeignKey("periods.id"), nullable=False, index=True)
+    student_id: Mapped[int] = mapped_column(nullable=False, index=True)
+    subject: Mapped[str] = mapped_column(String(255), nullable=False)
+    slot_count: Mapped[int] = mapped_column(nullable=False, default=1)
+
+
 class ShiftDashboard(Base):
     """日別シフトダッシュボードのベースデータ"""
 
@@ -137,3 +158,79 @@ class ShiftDashboard(Base):
     display_date: Mapped[str] = mapped_column(String(255), nullable=False)
     time_slots: Mapped[list] = mapped_column(JSON, nullable=False)
     teachers: Mapped[list] = mapped_column(JSON, nullable=False)
+
+
+class StudentProfile(Base):
+    """生徒マスタ（学年・校種付き）"""
+
+    __tablename__ = "student_profiles"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    school_level: Mapped[str] = mapped_column(String(20), nullable=False, default="middle")
+    grade_year: Mapped[int] = mapped_column(nullable=False, default=1)
+
+
+class TeacherProfile(Base):
+    """講師マスタ"""
+
+    __tablename__ = "teacher_profiles"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    color: Mapped[str] = mapped_column(String(64), nullable=False, default="bg-blue-100 text-blue-600")
+
+
+class StudentSchedulePublish(Base):
+    """生徒ごとのスケジュール確定（教室長が送信）"""
+
+    __tablename__ = "student_schedule_publishes"
+    __table_args__ = (
+        UniqueConstraint("period_id", "student_id", name="uq_student_schedule_publish"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    period_id: Mapped[int] = mapped_column(ForeignKey("periods.id"), nullable=False, index=True)
+    student_id: Mapped[int] = mapped_column(nullable=False, index=True)
+
+
+class TeacherSchedulePublish(Base):
+    """講師ごとのスケジュール送付（教室長が送信）"""
+
+    __tablename__ = "teacher_schedule_publishes"
+    __table_args__ = (
+        UniqueConstraint("period_id", "teacher_id", name="uq_teacher_schedule_publish"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    period_id: Mapped[int] = mapped_column(ForeignKey("periods.id"), nullable=False, index=True)
+    teacher_id: Mapped[int] = mapped_column(nullable=False, index=True)
+
+
+class PeriodScheduleWorkbook(Base):
+    """講習期間ごとにインポートした月次時間割 Excel（ダウンロード時に編集して返す）"""
+
+    __tablename__ = "period_schedule_workbooks"
+
+    period_id: Mapped[int] = mapped_column(ForeignKey("periods.id"), primary_key=True)
+    filename: Mapped[str] = mapped_column(String(255), nullable=False, default="schedule.xlsx")
+    content: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    imported_at: Mapped[datetime] = mapped_column(nullable=False, default=datetime.utcnow)
+
+
+class ShiftChangeRequest(Base):
+    """送付済みスケジュールへの変更申請（教室長の承認が必要）"""
+
+    __tablename__ = "shift_change_requests"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    period_id: Mapped[int] = mapped_column(ForeignKey("periods.id"), nullable=False, index=True)
+    role: Mapped[str] = mapped_column(String(10), nullable=False)
+    entity_id: Mapped[int] = mapped_column(nullable=False, index=True)
+    entity_name: Mapped[str] = mapped_column(String(255), nullable=False, default="")
+    slot_date: Mapped[date] = mapped_column(Date, nullable=False)
+    slot_key: Mapped[str] = mapped_column(String(1), nullable=False)
+    current_symbol: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+    requested_symbol: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+    reason: Mapped[str] = mapped_column(String(500), nullable=False, default="")
+    status: Mapped[str] = mapped_column(String(10), nullable=False, default="PENDING", index=True)

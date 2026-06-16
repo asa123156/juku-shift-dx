@@ -4,7 +4,11 @@ from fastapi import APIRouter, HTTPException, Query
 
 from config import DEFAULT_SHIFT_DATE
 from schemas.admin import ShiftDatesResponse, TeacherListItem
-from schemas.period import BulkShiftSubmitRequest, BulkShiftSubmitResponse, MyScheduleResponse
+from schemas.change_request import (
+    ChangeRequestCreateRequest,
+    ChangeRequestCreateResponse,
+    ChangeRequestItem,
+)
 from schemas.shifts import (
     ShiftDashboardResponse,
     ShiftSlotUpdateRequest,
@@ -16,13 +20,17 @@ from services.availability_dashboard import build_availability_dashboard
 from services.dashboard_builder import build_shift_dashboard_base_only
 from services.data_loader import list_shift_dates, resolve_shift_date
 from services.period_store import find_period_for_date
-from services.schedule_service import bulk_save_submissions, build_my_schedule
+from services.schedule_service import assert_entity_editable, bulk_save_submissions, build_my_schedule
 from services.shift_store import (
     build_teacher_submission_response,
     ensure_teacher_exists,
     save_teacher_submission,
+    symbol_to_dashboard,
     update_single_slot,
 )
+from schemas.period import BulkShiftSubmitRequest, BulkShiftSubmitResponse, MyScheduleResponse
+from services.change_request_store import create_change_request
+from services.slot_timing import SLOT_NUMS
 
 router = APIRouter(prefix="/api", tags=["shifts"])
 
@@ -107,6 +115,7 @@ def submit_shifts(body: ShiftSubmitRequest) -> ShiftSubmitResponse:
     if period is not None:
         if period.status == "FINALIZED":
             raise HTTPException(status_code=409, detail="確定済みのため提出できません")
+        assert_entity_editable("teacher", body.teacher_id, period.id)
         if period.status == "COLLECTING":
             bulk_save_submissions(
                 "teacher",
@@ -116,10 +125,8 @@ def submit_shifts(body: ShiftSubmitRequest) -> ShiftSubmitResponse:
             )
             merged = build_my_schedule("teacher", body.teacher_id, period.id)
             day = next(d for d in merged["dates"] if d["date"] == body.date)
-            from services.shift_store import symbol_to_dashboard
-
             dashboard_status = {
-                f"s{i}": symbol_to_dashboard(day["slots"][str(i)]) for i in range(1, 5)
+                f"s{i}": symbol_to_dashboard(day["slots"][str(i)]) for i in SLOT_NUMS
             }
             return ShiftSubmitResponse(
                 teacher_id=body.teacher_id,
@@ -142,8 +149,10 @@ def submit_shifts(body: ShiftSubmitRequest) -> ShiftSubmitResponse:
 def patch_shift_slot(body: ShiftSlotUpdateRequest) -> ShiftSubmitResponse:
     resolve_shift_date(body.date)
     period = find_period_for_date(body.date)
-    if period is not None and period.status == "FINALIZED":
-        raise HTTPException(status_code=409, detail="確定済みのため編集できません")
+    if period is not None:
+        if period.status == "FINALIZED":
+            raise HTTPException(status_code=409, detail="確定済みのため編集できません")
+        assert_entity_editable("teacher", body.teacher_id, period.id)
     dashboard = build_shift_dashboard_base_only(body.date)
     ensure_teacher_exists(dashboard, body.teacher_id)
     dashboard_status = update_single_slot(
@@ -171,4 +180,22 @@ def bulk_submit_shifts(body: BulkShiftSubmitRequest) -> BulkShiftSubmitResponse:
         period_id=body.period_id,
         saved_dates=saved,
         message=f"{len(saved)} 日分を保存しました",
+    )
+
+
+@router.post("/shifts/change-requests", response_model=ChangeRequestCreateResponse)
+def submit_change_request(body: ChangeRequestCreateRequest) -> ChangeRequestCreateResponse:
+    """送付済みスケジュールの変更申請（教室長承認が必要）。"""
+    row = create_change_request(
+        body.period_id,
+        body.role,
+        body.entity_id,
+        body.date,
+        body.slot,
+        body.requested_symbol,
+        body.reason,
+    )
+    return ChangeRequestCreateResponse(
+        request=ChangeRequestItem.model_validate(row),
+        message="変更申請を送信しました。教室長の承認をお待ちください。",
     )

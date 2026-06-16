@@ -2,15 +2,17 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
+from services.slot_timing import SLOT_KEYS as _SLOT_KEY_LIST, empty_slot_map
+
 PeriodStatus = Literal["DRAFT", "COLLECTING", "FINALIZED"]
 SlotSymbol = Literal["◎", "×", ""]
 SubmitRole = Literal["teacher", "student"]
 
-SLOT_KEYS = frozenset({"1", "2", "3", "4"})
+SLOT_KEYS = frozenset(_SLOT_KEY_LIST)
 
 
 def empty_slots() -> dict[str, SlotSymbol]:
-    return {"1": "", "2": "", "3": "", "4": ""}
+    return empty_slot_map()  # type: ignore[return-value]
 
 
 class Period(BaseModel):
@@ -19,12 +21,19 @@ class Period(BaseModel):
     start_date: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
     end_date: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
     status: PeriodStatus = "DRAFT"
+    closed_dates: list[str] = Field(default_factory=list, description="休校日（日曜以外で除外する日）")
 
 
 class PeriodCreateRequest(BaseModel):
     name: str = Field(min_length=1)
     start_date: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
     end_date: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
+    closed_dates: list[str] = Field(default_factory=list, description="開校しない日（日曜は自動除外）")
+
+    @field_validator("closed_dates")
+    @classmethod
+    def validate_closed_dates(cls, dates: list[str]) -> list[str]:
+        return sorted(set(dates))
 
     @field_validator("end_date")
     @classmethod
@@ -37,11 +46,13 @@ class PeriodCreateRequest(BaseModel):
 
 class PeriodStatusUpdateRequest(BaseModel):
     status: PeriodStatus
+    force: bool = Field(default=False, description="未割当が残っていても FINALIZED にする")
 
 
 class PeriodResponse(BaseModel):
     period: Period
     dates: list[str]
+    open_dates: list[str] = Field(default_factory=list, description="開校日（日曜・休校日を除く）")
     message: str
 
 
@@ -52,13 +63,13 @@ class PeriodListResponse(BaseModel):
 
 class DaySubmission(BaseModel):
     date: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
-    slots: dict[str, SlotSymbol]
+    slots: dict[str, str]
 
     @field_validator("slots")
     @classmethod
-    def validate_slots(cls, slots: dict[str, SlotSymbol]) -> dict[str, SlotSymbol]:
+    def validate_slots(cls, slots: dict[str, str]) -> dict[str, str]:
         if set(slots.keys()) != SLOT_KEYS:
-            raise ValueError('slots must include exactly "1", "2", "3", and "4"')
+            raise ValueError(f'slots must include exactly {sorted(SLOT_KEYS)}')
         return slots
 
 
@@ -79,10 +90,14 @@ class BulkShiftSubmitResponse(BaseModel):
 
 class ScheduleDay(BaseModel):
     date: str
-    slots: dict[str, SlotSymbol]
+    slots: dict[str, str]
     locked_slots: dict[str, bool] = Field(description="◎ 固定枠は true")
     readonly: bool = False
-    confirmed_lessons: list[dict] = Field(default_factory=list, description="確定後の割当（生徒向け）")
+    confirmed_lessons: list[dict] = Field(default_factory=list, description="確定後の割当")
+    teacher_slot_lanes: list[dict] = Field(
+        default_factory=list,
+        description="講師向け2レーン表示 [{slot, lanes:[{lane, lesson_kind, ...}]}]",
+    )
 
 
 class MyScheduleResponse(BaseModel):
@@ -90,9 +105,13 @@ class MyScheduleResponse(BaseModel):
     entity_id: int
     period_id: int
     period_name: str
+    period_start_date: str = ""
+    period_end_date: str = ""
     period_status: PeriodStatus
+    schedule_published: bool = False
     readonly: bool
     time_slots: list[dict] = Field(default_factory=list)
+    subject_plans: list[dict] = Field(default_factory=list, description="生徒希望教科 [{subject, slot_count}]")
     message: str | None = None
     dates: list[ScheduleDay]
 

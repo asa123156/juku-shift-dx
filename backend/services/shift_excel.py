@@ -6,6 +6,7 @@ from fastapi import HTTPException
 from openpyxl import Workbook, load_workbook
 
 from services.period_store import get_period, iter_dates, set_period_base_slot
+from services.slot_timing import SLOT_COUNT, SLOT_KEYS
 
 _REQUIRED = {"role", "entity_id", "date", "slot", "symbol"}
 
@@ -29,8 +30,8 @@ def _parse_rows(rows: Iterator[dict[str, str]]) -> list[dict[str, str]]:
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=f"Line {line_no}: invalid entity_id or slot") from exc
 
-        if slot not in ("1", "2", "3", "4"):
-            raise HTTPException(status_code=400, detail=f"Line {line_no}: slot must be 1-4")
+        if slot not in SLOT_KEYS:
+            raise HTTPException(status_code=400, detail=f"Line {line_no}: slot must be 1-{SLOT_COUNT}")
 
         symbol = row.get("symbol", "")
         parsed.append(
@@ -137,11 +138,11 @@ def export_shift_excel_xlsx(period_id: int) -> bytes:
     for iso_date in dates:
         for teacher_id in (1, 2, 3):
             slots = build_merged_slots_for_export("teacher", teacher_id, period.id, iso_date)
-            for slot in ("1", "2", "3", "4"):
+            for slot in SLOT_KEYS:
                 ws.append(["teacher", teacher_id, iso_date, slot, slots.get(slot, "")])
         for student_id in (1, 2, 3):
             slots = build_merged_slots_for_export("student", student_id, period.id, iso_date)
-            for slot in ("1", "2", "3", "4"):
+            for slot in SLOT_KEYS:
                 ws.append(["student", student_id, iso_date, slot, slots.get(slot, "")])
 
     buf = io.BytesIO()

@@ -3,9 +3,10 @@ from typing import Literal
 from pydantic import BaseModel, Field, field_validator
 
 from schemas.period import SLOT_KEYS, SlotSymbol
+from services.slot_timing import SLOT_COUNT, SLOT_FIELDS
 
 ShiftStatus = Literal[
-    "◎", "×", "", "確定", "不足", "未提出", "AI提案", "待機", "不可", "通常授業"
+    "◎", "×", "", "確定", "未提出", "AI提案", "待機", "不可", "通常授業"
 ]
 
 
@@ -18,17 +19,18 @@ class TimeSlotInfo(BaseModel):
 
 class DashboardMetrics(BaseModel):
     unsubmitted_teachers: int = Field(ge=0, description="未提出の講師数")
-    shortage_slots: int = Field(ge=0, description="不足しているコマ数")
 
 
 class TeacherShiftRow(BaseModel):
     id: int
     name: str
     color: str = Field(description="Tailwind のクラス名（アバター用）")
-    s1: ShiftStatus
-    s2: ShiftStatus
-    s3: ShiftStatus
-    s4: ShiftStatus
+    s1: ShiftStatus = ""
+    s2: ShiftStatus = ""
+    s3: ShiftStatus = ""
+    s4: ShiftStatus = ""
+    s5: ShiftStatus = ""
+    s6: ShiftStatus = ""
 
 
 class ShiftDashboardResponse(BaseModel):
@@ -52,20 +54,20 @@ class TeacherShiftSubmissionResponse(BaseModel):
 class ShiftSlotUpdateRequest(BaseModel):
     teacher_id: int = Field(ge=1)
     date: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
-    slot: int = Field(ge=1, le=4, description="コマ番号（1〜4）")
+    slot: int = Field(ge=1, le=SLOT_COUNT, description=f"コマ番号（1〜{SLOT_COUNT}）")
     status: SlotSymbol
 
 
 class ShiftSubmitRequest(BaseModel):
     teacher_id: int = Field(ge=1, description="開発中は 1=田中 先生 など")
     date: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
-    slots: dict[str, SlotSymbol] = Field(description='キーは "1"〜"4"')
+    slots: dict[str, SlotSymbol] = Field(description=f'キーは {sorted(SLOT_KEYS)}')
 
     @field_validator("slots")
     @classmethod
     def validate_slot_keys(cls, slots: dict[str, SlotSymbol]) -> dict[str, SlotSymbol]:
         if set(slots.keys()) != SLOT_KEYS:
-            raise ValueError('slots must include exactly "1", "2", "3", and "4"')
+            raise ValueError(f"slots must include exactly {sorted(SLOT_KEYS)}")
         return slots
 
 
@@ -74,5 +76,5 @@ class ShiftSubmitResponse(BaseModel):
     date: str
     message: str
     dashboard_status: dict[str, ShiftStatus] = Field(
-        description="教室長画面向けに変換後の s1〜s4 相当"
+        description="教室長画面向けに変換後の s1〜s6 相当"
     )

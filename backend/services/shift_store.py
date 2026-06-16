@@ -4,6 +4,7 @@ from fastapi import HTTPException
 
 from schemas.period import SlotSymbol, empty_slots
 from schemas.shifts import ShiftStatus
+from services.slot_timing import SLOT_FIELDS, SLOT_KEYS, SLOT_NUMS
 from services.submission_store import get_entity_day, get_submissions_for_date, upsert_entity_day
 
 SYMBOL_TO_DASHBOARD: dict[SlotSymbol, ShiftStatus] = {
@@ -20,7 +21,7 @@ LEGACY_TO_SYMBOL: dict[str, SlotSymbol] = {
     "priority": "◎",
 }
 
-_SLOT_FIELDS = ("s1", "s2", "s3", "s4")
+_SLOT_FIELDS = SLOT_FIELDS
 
 
 def symbol_to_dashboard(status: SlotSymbol) -> ShiftStatus:
@@ -39,21 +40,18 @@ def dashboard_to_symbol(status: ShiftStatus) -> SlotSymbol:
 
 def compute_metrics(teachers: list[dict]) -> dict[str, int]:
     unsubmitted = 0
-    shortage = 0
     for teacher in teachers:
         statuses = [teacher.get(f) for f in _SLOT_FIELDS]
         if any(s == "未提出" for s in statuses):
             unsubmitted += 1
-        shortage += sum(1 for s in statuses if s == "不足")
     return {
         "unsubmitted_teachers": unsubmitted,
-        "shortage_slots": shortage,
     }
 
 
 def _normalize_slots(raw: dict[str, str]) -> dict[str, SlotSymbol]:
     out: dict[str, SlotSymbol] = empty_slots()
-    for key in ("1", "2", "3", "4"):
+    for key in SLOT_KEYS:
         val = raw.get(key, "")
         if val in ("◎", "×", ""):
             out[key] = val  # type: ignore[assignment]
@@ -75,7 +73,7 @@ def save_teacher_submission(
     merged = {**existing, **slots}
     upsert_entity_day("teacher", teacher_id, iso_date, merged)
     normalized = _normalize_slots(merged)
-    return {f"s{i}": symbol_to_dashboard(normalized[str(i)]) for i in range(1, 5)}
+    return {f"s{i}": symbol_to_dashboard(normalized[str(i)]) for i in SLOT_NUMS}
 
 
 def save_teacher_bulk(teacher_id: int, submissions: list[dict]) -> list[str]:
@@ -132,7 +130,7 @@ def build_teacher_submission_response(
             status_code=404,
             detail=f"Teacher id={teacher_id} not found for date={iso_date}",
         )
-    slots = {str(i): dashboard_to_symbol(teacher[f"s{i}"]) for i in range(1, 5)}
+    slots = {str(i): dashboard_to_symbol(teacher[f"s{i}"]) for i in SLOT_NUMS}
     return {"teacher_id": teacher_id, "date": iso_date, "slots": slots}
 
 
