@@ -11,17 +11,6 @@ const LEVEL_OPTIONS = [
 
 const LEVEL_ORDER = { elementary: 0, middle: 1, high: 2 };
 
-const SUBJECT_PRESETS = ['国語', '数学', '数学I', '数学II', '英語', '理科', '社会'];
-
-function formatPlanSummary(plans) {
-  if (!plans?.length) return '未設定';
-  return plans.map((p) => `${p.subject}×${p.slot_count}`).join('、');
-}
-
-function emptyPlanRow() {
-  return { subject: '数学', slot_count: 1 };
-}
-
 const WEEKDAY_JA = ['日', '月', '火', '水', '木', '金', '土'];
 
 function candidateOpenDates(start, end) {
@@ -93,10 +82,6 @@ export default function AdminManage() {
   const [teacherForm, setTeacherForm] = useState({ name: '' });
   const [editingStudentId, setEditingStudentId] = useState(null);
   const [editingTeacherId, setEditingTeacherId] = useState(null);
-  const [periodPlans, setPeriodPlans] = useState([]);
-  const [planStudentId, setPlanStudentId] = useState(null);
-  const [planRows, setPlanRows] = useState([emptyPlanRow()]);
-  const [isSavingPlans, setIsSavingPlans] = useState(false);
 
   const loadAll = useCallback(async () => {
     setError(null);
@@ -115,17 +100,6 @@ export default function AdminManage() {
       setActivePeriodId(pid);
       setStudents(sData.students ?? []);
       setTeachers(tData.teachers ?? []);
-      if (pid) {
-        const planRes = await fetch(`/api/admin/periods/${pid}/student-plans`);
-        if (planRes.ok) {
-          const planData = await planRes.json();
-          setPeriodPlans(planData.students ?? []);
-        } else {
-          setPeriodPlans([]);
-        }
-      } else {
-        setPeriodPlans([]);
-      }
     } catch (err) {
       setError(err.message);
     }
@@ -136,17 +110,6 @@ export default function AdminManage() {
   }, [isReady, loadAll]);
 
   const studentGroups = useMemo(() => groupStudents(students), [students]);
-
-  const plansByStudentId = useMemo(() => {
-    const map = {};
-    periodPlans.forEach((entry) => {
-      map[entry.student_id] = entry.plans ?? [];
-    });
-    return map;
-  }, [periodPlans]);
-
-  const activePeriod = periods.find((p) => p.id === activePeriodId);
-  const plansReadonly = activePeriod?.status === 'FINALIZED';
 
   const periodCandidates = useMemo(
     () => candidateOpenDates(periodForm.start_date, periodForm.end_date),
@@ -235,7 +198,13 @@ export default function AdminManage() {
         throw new Error(body.detail || (isEdit ? '生徒の更新に失敗しました' : '生徒の追加に失敗しました'));
       }
       const data = await res.json();
-      setMessage(isEdit ? `生徒「${data.name}」を更新しました` : `生徒「${data.name}」を追加しました`);
+      if (isEdit) {
+        setMessage(`生徒「${data.name}」を更新しました`);
+      } else {
+        setMessage(
+          `生徒「${data.name}」を追加しました（ID: ${data.login_id || '-'} / PW: ${data.password || '-'}）`,
+        );
+      }
       resetStudentForm();
       await loadAll();
     } catch (err) {
@@ -248,44 +217,6 @@ export default function AdminManage() {
     setStudentForm({ name: s.name, school_level: s.school_level, grade_year: s.grade_year });
     setEditingTeacherId(null);
     resetTeacherForm();
-  };
-
-  const openPlanEditor = (s) => {
-    setPlanStudentId(s.id);
-    const existing = plansByStudentId[s.id] ?? [];
-    setPlanRows(existing.length ? existing.map((p) => ({ ...p })) : [emptyPlanRow()]);
-    setEditingStudentId(null);
-    setEditingTeacherId(null);
-  };
-
-  const handleSavePlans = async (e) => {
-    e.preventDefault();
-    if (!activePeriodId || planStudentId == null || isSavingPlans) return;
-    setIsSavingPlans(true);
-    setMessage(null);
-    setError(null);
-    try {
-      const res = await fetch(
-        `/api/admin/periods/${activePeriodId}/students/${planStudentId}/plans`,
-        {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ plans: planRows.filter((r) => r.subject?.trim() && r.slot_count > 0) }),
-        },
-      );
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.detail || '希望の保存に失敗しました');
-      const student = students.find((s) => s.id === planStudentId);
-      setMessage(
-        `${student?.name ?? '生徒'}の希望を保存しました（割当リクエスト ${data.synced_request_count} 件）`,
-      );
-      setPlanStudentId(null);
-      await loadAll();
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setIsSavingPlans(false);
-    }
   };
 
   const handleDeleteStudent = async (s) => {
@@ -325,7 +256,13 @@ export default function AdminManage() {
         throw new Error(body.detail || (isEdit ? '講師の更新に失敗しました' : '講師の追加に失敗しました'));
       }
       const data = await res.json();
-      setMessage(isEdit ? `講師「${data.name}」を更新しました` : `講師「${data.name}」を追加しました`);
+      if (isEdit) {
+        setMessage(`講師「${data.name}」を更新しました`);
+      } else {
+        setMessage(
+          `講師「${data.name}」を追加しました（ID: ${data.login_id || '-'} / PW: ${data.password || '-'}）`,
+        );
+      }
       resetTeacherForm();
       await loadAll();
     } catch (err) {
@@ -374,6 +311,21 @@ export default function AdminManage() {
 
         {error && <p className="text-red-500 mb-4">{error}</p>}
         {message && <p className="text-emerald-600 font-bold mb-4">{message}</p>}
+
+        {activePeriodId && (
+          <div className="mb-6 p-4 bg-violet-50 border border-violet-200 rounded-2xl flex flex-wrap items-center justify-between gap-3">
+            <p className="text-sm text-violet-900">
+              生徒ごとの講習教科・コマ数は「講習希望設定」ページで編集できます。
+            </p>
+            <button
+              type="button"
+              onClick={() => navigate('/admin/student-plans')}
+              className="text-sm font-bold bg-violet-600 hover:bg-violet-700 text-white px-4 py-2 rounded-xl"
+            >
+              講習希望設定へ →
+            </button>
+          </div>
+        )}
 
         <Section title="講習（期間）を作成">
           <form onSubmit={handleCreatePeriod} className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
@@ -471,6 +423,19 @@ export default function AdminManage() {
         </Section>
 
         <Section title={editingStudentId ? '生徒を編集' : '生徒を追加'}>
+          {activePeriodId && (
+            <p className="text-sm text-gray-600 mb-4">
+              講習の教科・コマ数は
+              <button
+                type="button"
+                onClick={() => navigate('/admin/student-plans')}
+                className="mx-1 font-bold text-violet-700 hover:underline"
+              >
+                講習希望設定
+              </button>
+              ページで設定できます。
+            </p>
+          )}
           <form onSubmit={handleSaveStudent} className="flex flex-wrap gap-3 items-end">
             <label className="flex-1 min-w-[140px]">
               <span className="text-sm font-bold text-gray-600">氏名</span>
@@ -512,16 +477,12 @@ export default function AdminManage() {
                       <li key={s.id} className="flex items-center justify-between px-4 py-2.5 bg-gray-50 hover:bg-white gap-2 flex-wrap">
                         <div className="min-w-0">
                           <span className="font-medium text-gray-800">{s.name}</span>
-                          <p className="text-xs text-gray-500 mt-0.5 truncate">
-                            希望: {formatPlanSummary(plansByStudentId[s.id])}
+                          <p className="text-xs text-gray-500 mt-0.5">
+                            ID: <span className="font-mono">{s.login_id || '-'}</span>
+                            {' '} / PW: <span className="font-mono">{s.password || '-'}</span>
                           </p>
                         </div>
                         <div className="flex gap-2 shrink-0">
-                          {activePeriodId && !plansReadonly && (
-                            <button type="button" onClick={() => openPlanEditor(s)} className="text-xs font-bold text-violet-700 hover:underline">
-                              希望設定
-                            </button>
-                          )}
                           <button type="button" onClick={() => handleEditStudent(s)} className="text-xs font-bold text-blue-600 hover:underline">編集</button>
                           <button type="button" onClick={() => handleDeleteStudent(s)} className="text-xs font-bold text-red-600 hover:underline">削除</button>
                         </div>
@@ -533,92 +494,6 @@ export default function AdminManage() {
             </div>
           )}
         </Section>
-
-        {activePeriodId && (
-          <Section title={`講習希望（教科・コマ数）— ${activePeriod?.name ?? ''}`}>
-            <p className="text-sm text-gray-600 mb-4">
-              生徒ごとに「取りたい教科」と「講習期間中のコマ数」を設定します。保存すると割当ボード用の未割当リクエストが自動生成されます。
-              {plansReadonly && <span className="block mt-1 text-amber-700 font-bold">確定済みのため編集できません。</span>}
-            </p>
-            {planStudentId != null ? (
-              <form onSubmit={handleSavePlans} className="space-y-3">
-                <p className="font-bold text-gray-800">
-                  {students.find((s) => s.id === planStudentId)?.name ?? '生徒'} の希望
-                </p>
-                {planRows.map((row, idx) => (
-                  <div key={idx} className="flex flex-wrap gap-2 items-end">
-                    <label className="flex-1 min-w-[120px]">
-                      <span className="text-xs font-bold text-gray-600">教科</span>
-                      <input
-                        list="subject-presets"
-                        value={row.subject}
-                        onChange={(e) => {
-                          const next = [...planRows];
-                          next[idx] = { ...next[idx], subject: e.target.value };
-                          setPlanRows(next);
-                        }}
-                        className="mt-1 w-full border rounded-lg px-3 py-2"
-                        placeholder="例: 数学"
-                      />
-                    </label>
-                    <label className="w-24">
-                      <span className="text-xs font-bold text-gray-600">コマ数</span>
-                      <input
-                        type="number"
-                        min={0}
-                        max={60}
-                        value={row.slot_count}
-                        onChange={(e) => {
-                          const next = [...planRows];
-                          next[idx] = { ...next[idx], slot_count: Number(e.target.value) };
-                          setPlanRows(next);
-                        }}
-                        className="mt-1 w-full border rounded-lg px-3 py-2"
-                      />
-                    </label>
-                    <button
-                      type="button"
-                      onClick={() => setPlanRows(planRows.filter((_, i) => i !== idx))}
-                      className="text-xs font-bold text-red-600 px-2 py-2.5"
-                    >
-                      削除
-                    </button>
-                  </div>
-                ))}
-                <datalist id="subject-presets">
-                  {SUBJECT_PRESETS.map((sub) => (
-                    <option key={sub} value={sub} />
-                  ))}
-                </datalist>
-                <div className="flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setPlanRows([...planRows, emptyPlanRow()])}
-                    className="text-sm font-bold text-gray-600 border rounded-lg px-3 py-2"
-                  >
-                    ＋ 教科を追加
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={isSavingPlans}
-                    className="bg-violet-600 hover:bg-violet-700 disabled:bg-violet-300 text-white px-5 py-2 rounded-xl font-bold"
-                  >
-                    {isSavingPlans ? '保存中...' : '保存してリクエスト反映'}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setPlanStudentId(null)}
-                    className="text-sm font-bold text-gray-500 px-3 py-2"
-                  >
-                    キャンセル
-                  </button>
-                </div>
-              </form>
-            ) : (
-              <p className="text-sm text-gray-500">生徒一覧の「希望設定」から編集してください。</p>
-            )}
-          </Section>
-        )}
 
         <Section title={editingTeacherId ? '講師を編集' : '講師を追加'}>
           <form onSubmit={handleSaveTeacher} className="flex gap-3 items-end flex-wrap">
@@ -639,9 +514,15 @@ export default function AdminManage() {
             <ul className="mt-4 divide-y border rounded-xl overflow-hidden">
               {teachers.map((t) => (
                 <li key={t.id} className="flex items-center justify-between px-4 py-2.5 bg-gray-50 hover:bg-white">
-                  <div className="flex items-center gap-2 text-sm">
+                  <div className="flex items-center gap-2 text-sm min-w-0">
                     <span className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold ${t.color}`}>{t.name.charAt(0)}</span>
-                    <span className="font-medium text-gray-800">{t.name}</span>
+                    <div className="min-w-0">
+                      <p className="font-medium text-gray-800">{t.name}</p>
+                      <p className="text-xs text-gray-500 mt-0.5">
+                        ID: <span className="font-mono">{t.login_id || '-'}</span>
+                        {' '} / PW: <span className="font-mono">{t.password || '-'}</span>
+                      </p>
+                    </div>
                   </div>
                   <div className="flex gap-2">
                     <button type="button" onClick={() => handleEditTeacher(t)} className="text-xs font-bold text-blue-600 hover:underline">編集</button>

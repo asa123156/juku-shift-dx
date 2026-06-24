@@ -46,6 +46,7 @@ export default function DataImport() {
   const [sheetName, setSheetName] = useState('');
   const [spreadsheetRef, setSpreadsheetRef] = useState('');
   const [googleConfigured, setGoogleConfigured] = useState(null);
+  const [serviceAccountEmail, setServiceAccountEmail] = useState('');
   const [importAllSheets, setImportAllSheets] = useState(true);
 
   useEffect(() => {
@@ -62,8 +63,14 @@ export default function DataImport() {
       .catch(() => {});
     fetch('/api/google/status')
       .then((r) => r.json())
-      .then((data) => setGoogleConfigured(data.configured))
-      .catch(() => setGoogleConfigured(false));
+      .then((data) => {
+        setGoogleConfigured(data.configured);
+        setServiceAccountEmail(data.service_account_email || '');
+      })
+      .catch(() => {
+        setGoogleConfigured(false);
+        setServiceAccountEmail('');
+      });
   }, [isReady]);
 
   const handleDragOver = (e) => { e.preventDefault(); setIsDragging(true); };
@@ -247,7 +254,15 @@ export default function DataImport() {
                     </p>
                   )}
                   {googleConfigured === true && (
-                    <p className="sm:col-span-2 text-emerald-700 text-sm">Google 連携: 利用可能</p>
+                    <div className="sm:col-span-2 text-emerald-700 text-sm bg-emerald-50 border border-emerald-200 rounded-lg p-3 space-y-1">
+                      <p className="font-bold">Google 連携: 利用可能</p>
+                      {serviceAccountEmail && (
+                        <p>
+                          共有先サービスアカウント:
+                          <span className="ml-1 font-mono text-emerald-900">{serviceAccountEmail}</span>
+                        </p>
+                      )}
+                    </div>
                   )}
                 </>
               )}

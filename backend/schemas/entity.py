@@ -10,6 +10,8 @@ class StudentProfile(BaseModel):
     grade_year: int
     grade_label: str
     level_label: str
+    login_id: str = ""
+    password: str = ""
 
 
 class StudentCreateRequest(BaseModel):
@@ -44,6 +46,8 @@ class TeacherProfile(BaseModel):
     id: int
     name: str
     color: str = ""
+    login_id: str = ""
+    password: str = ""
 
 
 class TeacherCreateRequest(BaseModel):

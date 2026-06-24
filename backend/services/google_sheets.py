@@ -25,6 +25,27 @@ def is_google_configured() -> bool:
     return bool(path and os.path.isfile(path))
 
 
+def get_service_account_email() -> str | None:
+    json_str = os.environ.get("GOOGLE_SERVICE_ACCOUNT_JSON", "").strip()
+    if json_str:
+        try:
+            info = json.loads(json_str)
+        except json.JSONDecodeError:
+            return None
+        value = str(info.get("client_email", "")).strip()
+        return value or None
+    path = os.environ.get("GOOGLE_SERVICE_ACCOUNT_FILE", "").strip()
+    if not path or not os.path.isfile(path):
+        return None
+    try:
+        with open(path, encoding="utf-8") as f:
+            info = json.load(f)
+    except (json.JSONDecodeError, OSError):
+        return None
+    value = str(info.get("client_email", "")).strip()
+    return value or None
+
+
 def _credentials():
     if not is_google_configured():
         raise HTTPException(

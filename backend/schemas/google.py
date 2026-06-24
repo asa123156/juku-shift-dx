@@ -4,6 +4,7 @@ from pydantic import BaseModel, Field
 class GoogleStatusResponse(BaseModel):
     configured: bool
     message: str
+    service_account_email: str | None = None
 
 
 class GoogleSheetImportRequest(BaseModel):

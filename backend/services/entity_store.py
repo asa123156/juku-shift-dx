@@ -2,6 +2,7 @@
 
 import json
 import re
+import secrets
 from copy import deepcopy
 
 from fastapi import HTTPException
@@ -19,6 +20,7 @@ from models import StudentSubjectPlan
 
 STUDENTS_PATH = DATA_DIR / "students.json"
 TEACHERS_PATH = DATA_DIR / "teachers.json"
+USERS_PATH = DATA_DIR / "users.json"
 
 SchoolLevel = str  # elementary | middle | high
 
@@ -75,6 +77,7 @@ def parse_grade_label(label: str) -> tuple[str, int]:
 
 
 def _student_to_dict(row: StudentProfile) -> dict:
+    creds = _credentials_for_entity("student", row.id)
     return {
         "id": row.id,
         "name": row.name,
@@ -82,14 +85,19 @@ def _student_to_dict(row: StudentProfile) -> dict:
         "grade_year": row.grade_year,
         "grade_label": grade_label(row.school_level, row.grade_year),
         "level_label": LEVEL_FULL.get(row.school_level, row.school_level),
+        "login_id": creds["login_id"],
+        "password": creds["password"],
     }
 
 
 def _teacher_to_dict(row: TeacherProfile) -> dict:
+    creds = _credentials_for_entity("teacher", row.id)
     return {
         "id": row.id,
         "name": row.name,
         "color": row.color,
+        "login_id": creds["login_id"],
+        "password": creds["password"],
     }
 
 
@@ -98,6 +106,105 @@ def _read_json(path) -> dict:
         return {"items": [], "next_id": 1}
     with path.open(encoding="utf-8") as f:
         return json.load(f)
+
+
+def _load_users() -> list[dict]:
+    if not USERS_PATH.is_file():
+        return []
+    with USERS_PATH.open(encoding="utf-8") as f:
+        data = json.load(f)
+    return data if isinstance(data, list) else []
+
+
+def _save_users(users: list[dict]) -> None:
+    USERS_PATH.write_text(
+        json.dumps(users, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+
+def _credential_keys(role: str) -> tuple[str, str]:
+    if role == "student":
+        return "student_id", "/student-schedule"
+    return "teacher_id", "/student"
+
+
+def _default_login(role: str, entity_id: int) -> str:
+    prefix = "student" if role == "student" else "teacher"
+    return f"{prefix}{entity_id}@example.com"
+
+
+def _default_password(role: str, entity_id: int) -> str:
+    prefix = "std" if role == "student" else "tch"
+    return f"{prefix}-{entity_id:03d}-{secrets.token_hex(2)}"
+
+
+def _find_user_for_entity(users: list[dict], role: str, entity_id: int) -> dict | None:
+    id_key, _ = _credential_keys(role)
+    for user in users:
+        if user.get("role") == role and user.get(id_key) == entity_id:
+            return user
+    return None
+
+
+def _upsert_entity_user(role: str, entity_id: int, name: str) -> dict[str, str]:
+    users = _load_users()
+    id_key, redirect = _credential_keys(role)
+    existing = _find_user_for_entity(users, role, entity_id)
+    if existing is not None:
+        existing["name"] = name
+        existing["redirect"] = redirect
+        if not existing.get("email"):
+            existing["email"] = _default_login(role, entity_id)
+        if not existing.get("password"):
+            existing["password"] = _default_password(role, entity_id)
+        _save_users(users)
+        return {"login_id": existing["email"], "password": existing["password"]}
+
+    taken = {str(u.get("email", "")).lower() for u in users}
+    email = _default_login(role, entity_id)
+    if email.lower() in taken:
+        local, domain = email.split("@", 1)
+        suffix = 2
+        while f"{local}{suffix}@{domain}".lower() in taken:
+            suffix += 1
+        email = f"{local}{suffix}@{domain}"
+
+    password = _default_password(role, entity_id)
+    user = {
+        "email": email,
+        "password": password,
+        "role": role,
+        "teacher_id": None,
+        "student_id": None,
+        "name": name,
+        "redirect": redirect,
+    }
+    user[id_key] = entity_id
+    users.append(user)
+    _save_users(users)
+    return {"login_id": email, "password": password}
+
+
+def _remove_entity_user(role: str, entity_id: int) -> None:
+    users = _load_users()
+    id_key, _ = _credential_keys(role)
+    filtered = [
+        u for u in users
+        if not (u.get("role") == role and u.get(id_key) == entity_id)
+    ]
+    if len(filtered) != len(users):
+        _save_users(filtered)
+
+
+def _credentials_for_entity(role: str, entity_id: int) -> dict[str, str]:
+    user = _find_user_for_entity(_load_users(), role, entity_id)
+    if user is None:
+        return {"login_id": "", "password": ""}
+    return {
+        "login_id": str(user.get("email", "")),
+        "password": str(user.get("password", "")),
+    }
 
 
 def seed_entities_if_empty() -> None:
@@ -124,6 +231,10 @@ def seed_entities_if_empty() -> None:
                 )
             )
         db.commit()
+    for student in list_students():
+        _upsert_entity_user("student", int(student["id"]), str(student["name"]))
+    for teacher in list_teachers():
+        _upsert_entity_user("teacher", int(teacher["id"]), str(teacher["name"]))
 
 
 def reset_entities_for_tests() -> None:
@@ -240,18 +351,19 @@ def create_student(name: str, school_level: str, grade_year: int) -> dict:
         db.add(row)
         db.commit()
         db.refresh(row)
+        _upsert_entity_user("student", row.id, row.name)
         return _student_to_dict(row)
 
 
 def create_teacher(name: str, color: str | None = None) -> dict:
     with _session() as db:
-        count = db.scalar(select(TeacherProfile.id).limit(1))
         existing = db.scalars(select(TeacherProfile)).all()
         picked = color or TEACHER_COLORS[len(existing) % len(TEACHER_COLORS)]
         row = TeacherProfile(name=name, color=picked)
         db.add(row)
         db.commit()
         db.refresh(row)
+        _upsert_entity_user("teacher", row.id, row.name)
         return _teacher_to_dict(row)
 
 
@@ -267,6 +379,7 @@ def update_student(student_id: int, name: str, school_level: str, grade_year: in
         _sync_student_name(student_id, name, db)
         db.commit()
         db.refresh(row)
+        _upsert_entity_user("student", row.id, row.name)
         return _student_to_dict(row)
 
 
@@ -284,6 +397,7 @@ def delete_student(student_id: int) -> None:
         ).delete()
         db.delete(row)
         db.commit()
+    _remove_entity_user("student", student_id)
 
 
 def update_teacher(teacher_id: int, name: str, color: str | None = None) -> dict:
@@ -297,6 +411,7 @@ def update_teacher(teacher_id: int, name: str, color: str | None = None) -> dict
         _sync_teacher_name(teacher_id, name, db)
         db.commit()
         db.refresh(row)
+        _upsert_entity_user("teacher", row.id, row.name)
         return _teacher_to_dict(row)
 
 
@@ -319,6 +434,7 @@ def delete_teacher(teacher_id: int) -> None:
         ).delete()
         db.delete(row)
         db.commit()
+    _remove_entity_user("teacher", teacher_id)
 
 
 def list_students_grouped() -> list[dict]:
