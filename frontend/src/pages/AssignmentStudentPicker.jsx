@@ -80,9 +80,11 @@ function TeacherCard({ teacher, onPublish, publishing }) {
   );
 }
 
-function StudentCard({ student, onOpen, onPublish, publishing }) {
+function StudentCard({ student, onOpen, onPublishRequest, onPublishFinal, requesting, publishing }) {
   const planSummary = formatStudentPlans(student);
-  const canPublish = student.pending_count === 0 && !student.schedule_published;
+  const canRequest = !student.schedule_requested;
+  const canPublishFinal = student.pending_count === 0 && student.schedule_requested && !student.schedule_published;
+  const isRequesting = requesting === student.id;
   const isPublishing = publishing === student.id;
 
   return (
@@ -121,17 +123,37 @@ function StudentCard({ student, onOpen, onPublish, publishing }) {
             送信済
           </span>
         )}
+        {student.schedule_requested && !student.schedule_published && (
+          <span className="text-xs font-bold bg-indigo-100 text-indigo-800 px-2 py-0.5 rounded-full">
+            提案書送付済
+          </span>
+        )}
       </div>
 
-      {canPublish && (
+      {canRequest && (
+        <button
+          type="button"
+          disabled={isRequesting}
+          onClick={() => onPublishRequest(student.id)}
+          className="mt-3 w-full bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-400 text-white text-sm font-bold py-2.5 rounded-xl shadow-sm transition-colors"
+        >
+          {isRequesting ? '送信中...' : '提案書を送付（回答依頼）'}
+        </button>
+      )}
+      {canPublishFinal && (
         <button
           type="button"
           disabled={isPublishing}
-          onClick={() => onPublish(student.id)}
+          onClick={() => onPublishFinal(student.id)}
           className="mt-3 w-full bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-400 text-white text-sm font-bold py-2.5 rounded-xl shadow-sm transition-colors"
         >
           {isPublishing ? '送信中...' : '確定して生徒に送信'}
         </button>
+      )}
+      {!student.schedule_requested && (
+        <p className="mt-2 text-[11px] text-indigo-700 font-bold">
+          まず提案書を送付してから回答を集めてください
+        </p>
       )}
       {student.pending_count > 0 && !student.schedule_published && (
         <p className="mt-2 text-[11px] text-amber-700 font-bold">
@@ -147,7 +169,16 @@ function StudentCard({ student, onOpen, onPublish, publishing }) {
   );
 }
 
-function LevelColumn({ title, accent, students, onOpen, onPublish, publishing }) {
+function LevelColumn({
+  title,
+  accent,
+  students,
+  onOpen,
+  onPublishRequest,
+  onPublishFinal,
+  requesting,
+  publishing,
+}) {
   return (
     <div className="flex flex-col min-w-0 flex-1">
       <div className={`${accent} text-white text-center font-bold py-2.5 rounded-t-xl text-sm`}>
@@ -163,7 +194,9 @@ function LevelColumn({ title, accent, students, onOpen, onPublish, publishing })
               key={s.id}
               student={s}
               onOpen={onOpen}
-              onPublish={onPublish}
+              onPublishRequest={onPublishRequest}
+              onPublishFinal={onPublishFinal}
+              requesting={requesting}
               publishing={publishing}
             />
           ))
@@ -181,6 +214,7 @@ export default function AssignmentStudentPicker() {
   const [sheets, setSheets] = useState(null);
   const [loadError, setLoadError] = useState(null);
   const [message, setMessage] = useState(null);
+  const [requestingId, setRequestingId] = useState(null);
   const [publishingId, setPublishingId] = useState(null);
   const [publishingTeacherId, setPublishingTeacherId] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -222,15 +256,40 @@ export default function AssignmentStudentPicker() {
   const teachers = sheets?.teachers ?? [];
   const publishStats = useMemo(() => {
     const published = students.filter((s) => s.schedule_published).length;
-    const ready = students.filter((s) => s.pending_count === 0 && !s.schedule_published).length;
+    const requested = students.filter((s) => s.schedule_requested).length;
+    const ready = students.filter(
+      (s) => s.pending_count === 0 && s.schedule_requested && !s.schedule_published,
+    ).length;
     const pending = students.filter((s) => s.pending_count > 0).length;
-    return { published, ready, pending, total: students.length };
+    return { published, requested, ready, pending, total: students.length };
   }, [students]);
 
   const teacherPublishStats = useMemo(() => {
     const published = teachers.filter((t) => t.schedule_published).length;
     return { published, total: teachers.length };
   }, [teachers]);
+
+  const handlePublishRequest = async (studentId) => {
+    if (!periodId || requestingId) return;
+    setRequestingId(studentId);
+    setMessage(null);
+    setLoadError(null);
+    try {
+      const res = await fetch('/api/admin/assignments/publish-request', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ period_id: periodId, student_id: studentId }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.detail || '提案書送付に失敗しました');
+      setSheets(data.sheets);
+      setMessage(data.message);
+    } catch (err) {
+      setLoadError(err.message);
+    } finally {
+      setRequestingId(null);
+    }
+  };
 
   const handlePublish = async (studentId) => {
     if (!periodId || publishingId) return;
@@ -295,6 +354,9 @@ export default function AssignmentStudentPicker() {
             <p className="text-sm text-gray-600 mt-2">
               送信済み <span className="font-bold text-blue-700">{publishStats.published}</span>
               / {publishStats.total} 名
+              {publishStats.requested > 0 && (
+                <span className="ml-3 text-indigo-700 font-bold">提案書送付済 {publishStats.requested} 名</span>
+              )}
               {publishStats.ready > 0 && (
                 <span className="ml-3 text-emerald-700 font-bold">確定可能 {publishStats.ready} 名</span>
               )}
@@ -340,8 +402,9 @@ export default function AssignmentStudentPicker() {
             <div className="mb-4 p-4 bg-white border border-gray-200 rounded-xl text-sm text-gray-700">
               <p className="font-bold text-gray-800">確定の流れ</p>
               <ol className="mt-2 list-decimal list-inside space-y-1 text-gray-600">
-                <li>生徒を選んで割当を完成させる（未割当 0 になるまで）</li>
-                <li>「確定して生徒に送信」を押すと、生徒画面にスケジュールが届きます</li>
+                <li>「提案書を送付（回答依頼）」で生徒に初回スケジュールを配布します</li>
+                <li>生徒回答後に割当を完成させる（未割当 0 になるまで）</li>
+                <li>「確定して生徒に送信」を押すと、確定版が生徒画面に届きます</li>
                 <li>送付後は生徒は変更申請のみ可能です</li>
               </ol>
             </div>
@@ -353,7 +416,9 @@ export default function AssignmentStudentPicker() {
                   accent={col.accent}
                   students={byLevel[col.key] ?? []}
                   onOpen={(id) => navigate(`/admin/assignments/${id}`)}
-                  onPublish={handlePublish}
+                  onPublishRequest={handlePublishRequest}
+                  onPublishFinal={handlePublish}
+                  requesting={requestingId}
                   publishing={publishingId}
                 />
               ))}

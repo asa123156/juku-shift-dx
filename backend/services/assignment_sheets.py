@@ -8,7 +8,11 @@ from services.teacher_slot_lanes import build_teacher_lanes, teacher_slot_assign
 from services.availability_dashboard import build_availability_dashboard
 from services.entity_store import get_student_name_map, list_students
 from services.period_store import get_period, open_dates_for_period
-from services.schedule_publish_store import list_published_student_ids, list_published_teacher_ids
+from services.schedule_publish_store import (
+    list_published_student_ids,
+    list_published_teacher_ids,
+    list_request_published_student_ids,
+)
 from services.student_plan_store import list_plans_for_period
 from services.slot_timing import SLOT_NUMS, generate_time_slots
 from services.submission_store import get_submissions_for_date
@@ -110,6 +114,7 @@ def build_assignment_sheets(period_id: int) -> dict:
 
     registry = _collect_student_registry(open_dates)
     published_ids = list_published_student_ids(period_id)
+    requested_ids = list_request_published_student_ids(period_id)
     teacher_published_ids = list_published_teacher_ids(period_id)
     plans_by_student = list_plans_for_period(period_id)
     students = []
@@ -138,6 +143,7 @@ def build_assignment_sheets(period_id: int) -> dict:
                 "pending_count": total_pending,
                 "subjects": [p["subject"] for p in subject_plans],
                 "subject_plans": subject_plans,
+                "schedule_requested": sid in requested_ids,
                 "schedule_published": sid in published_ids,
             }
         )

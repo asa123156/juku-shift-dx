@@ -46,7 +46,12 @@ def _reset_data() -> None:
 def _reset_publish_and_change_requests() -> None:
     from database import Base, engine
     import models  # noqa: F401
-    from models import ShiftChangeRequest, StudentSchedulePublish, TeacherSchedulePublish
+    from models import (
+        ShiftChangeRequest,
+        StudentSchedulePublish,
+        StudentScheduleRequestPublish,
+        TeacherSchedulePublish,
+    )
     from sqlalchemy.orm import Session
     from database import SessionLocal
 
@@ -54,6 +59,7 @@ def _reset_publish_and_change_requests() -> None:
     with SessionLocal() as db:
         db.query(ShiftChangeRequest).delete()
         db.query(StudentSchedulePublish).delete()
+        db.query(StudentScheduleRequestPublish).delete()
         db.query(TeacherSchedulePublish).delete()
         db.commit()
 
@@ -102,6 +108,40 @@ def run_tests() -> None:
     assert schedule["period_status"] == "COLLECTING"
     assert len(schedule["dates"]) == 11  # 6/9〜6/20、日曜除外
     assert len(schedule.get("time_slots", [])) == SLOT_COUNT
+
+    bulk_blocked = client.patch(
+        "/api/shifts/bulk",
+        json={
+            "role": "student",
+            "entity_id": 1,
+            "period_id": 1,
+            "submissions": [
+                {
+                    "date": "2026-06-10",
+                    "slots": _student_slots(**{
+                        "1": "",
+                        "2": "",
+                        "3": "×",
+                    }),
+                },
+                {
+                    "date": "2026-06-11",
+                    "slots": _student_slots(**{
+                        "1": "×",
+                        "2": "",
+                    }),
+                },
+            ],
+        },
+    )
+    assert bulk_blocked.status_code == 409
+    assert "提案書が未送付" in bulk_blocked.json().get("detail", "")
+
+    request_publish = client.post(
+        "/api/admin/assignments/publish-request",
+        json={"period_id": 1, "student_id": 1},
+    )
+    assert request_publish.status_code == 200, request_publish.text
 
     bulk = client.patch(
         "/api/shifts/bulk",

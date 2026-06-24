@@ -108,6 +108,7 @@ class MyScheduleResponse(BaseModel):
     period_start_date: str = ""
     period_end_date: str = ""
     period_status: PeriodStatus
+    schedule_requested: bool = False
     schedule_published: bool = False
     readonly: bool
     time_slots: list[dict] = Field(default_factory=list)

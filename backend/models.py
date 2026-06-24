@@ -195,6 +195,19 @@ class StudentSchedulePublish(Base):
     student_id: Mapped[int] = mapped_column(nullable=False, index=True)
 
 
+class StudentScheduleRequestPublish(Base):
+    """生徒ごとの初回提案書送付（回答依頼）。"""
+
+    __tablename__ = "student_schedule_request_publishes"
+    __table_args__ = (
+        UniqueConstraint("period_id", "student_id", name="uq_student_schedule_request_publish"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    period_id: Mapped[int] = mapped_column(ForeignKey("periods.id"), nullable=False, index=True)
+    student_id: Mapped[int] = mapped_column(nullable=False, index=True)
+
+
 class TeacherSchedulePublish(Base):
     """講師ごとのスケジュール送付（教室長が送信）"""
 

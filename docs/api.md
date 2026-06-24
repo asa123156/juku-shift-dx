@@ -65,6 +65,7 @@ Swagger: http://127.0.0.1:8000/docs
 | POST | `/api/admin/auto-assign` | 1日分の自動割当 |
 | POST | `/api/admin/auto-assign-period` | 期間全体の自動割当 |
 | POST | `/api/admin/assignments/publish-schedule` | 生徒に確定スケジュール送付 |
+| POST | `/api/admin/assignments/publish-request` | 生徒に初回提案書（回答依頼）送付 |
 | POST | `/api/admin/assignments/publish-teacher-schedule` | 講師に確定スケジュール送付 |
 | POST | `/api/admin/assignments/publish-all` | 割当済み生徒・全講師に一括送付 |
 | POST | `/api/admin/assignment-requests/import` | CSV から未割当リクエスト取込 |
@@ -83,8 +84,9 @@ Swagger: http://127.0.0.1:8000/docs
 ### 期間ステータスと送付の関係
 
 1. **COLLECTING** — 教室長が `period_base` で ◎ を設定 → 生徒が空き/× を提出 → 教室長が割当
-2. **publish-schedule / publish-teacher-schedule** — 個人に確定スケジュール送付（readonly 化。科目・通常/講習を表示）
-3. **FINALIZED** — 募集締切。Excel / Google 書き出し可能
+2. **publish-request** — 生徒に初回提案書を送付（回答開始）
+3. **publish-schedule / publish-teacher-schedule** — 個人に確定スケジュール送付（readonly 化。科目・通常/講習を表示）
+4. **FINALIZED** — 募集締切。Excel / Google 書き出し可能
 
 ### Google Sheets 連携
 

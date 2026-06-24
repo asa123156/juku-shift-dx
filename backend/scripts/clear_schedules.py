@@ -20,6 +20,7 @@ from models import (
     ShiftChangeRequest,
     ShiftSubmission,
     StudentSchedulePublish,
+    StudentScheduleRequestPublish,
     StudentSubjectPlan,
     TeacherSchedulePublish,
 )
@@ -51,6 +52,7 @@ def clear_schedule_db() -> dict[str, int]:
         for label, model in (
             ("period_base_slots", PeriodBaseSlot),
             ("student_plans", StudentSubjectPlan),
+            ("student_request_publishes", StudentScheduleRequestPublish),
             ("student_publishes", StudentSchedulePublish),
             ("teacher_publishes", TeacherSchedulePublish),
             ("change_requests", ShiftChangeRequest),

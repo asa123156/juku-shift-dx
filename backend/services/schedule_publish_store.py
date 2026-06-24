@@ -1,10 +1,10 @@
-"""生徒・講師ごとのスケジュール送付（確定）状態。"""
+"""生徒・講師ごとのスケジュール送付状態（初回提案・確定）。"""
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from database import SessionLocal
-from models import StudentSchedulePublish, TeacherSchedulePublish
+from models import StudentSchedulePublish, StudentScheduleRequestPublish, TeacherSchedulePublish
 
 
 def _session() -> Session:
@@ -32,9 +32,55 @@ def list_published_student_ids(period_id: int) -> set[int]:
     return set(rows)
 
 
+def is_schedule_request_published(period_id: int, student_id: int) -> bool:
+    with _session() as db:
+        row = db.scalars(
+            select(StudentScheduleRequestPublish).where(
+                StudentScheduleRequestPublish.period_id == period_id,
+                StudentScheduleRequestPublish.student_id == student_id,
+            )
+        ).first()
+    return row is not None
+
+
+def list_request_published_student_ids(period_id: int) -> set[int]:
+    with _session() as db:
+        rows = db.scalars(
+            select(StudentScheduleRequestPublish.student_id).where(
+                StudentScheduleRequestPublish.period_id == period_id
+            )
+        ).all()
+    return set(rows)
+
+
+def publish_student_schedule_request(period_id: int, student_id: int) -> bool:
+    """初回提案書送付。既に送付済みなら False。"""
+    with _session() as db:
+        existing = db.scalars(
+            select(StudentScheduleRequestPublish).where(
+                StudentScheduleRequestPublish.period_id == period_id,
+                StudentScheduleRequestPublish.student_id == student_id,
+            )
+        ).first()
+        if existing is not None:
+            return False
+        db.add(StudentScheduleRequestPublish(period_id=period_id, student_id=student_id))
+        db.commit()
+        return True
+
+
 def publish_student_schedule(period_id: int, student_id: int) -> bool:
     """確定送信。既に確定済みなら False。"""
     with _session() as db:
+        # 確定送付時は初回提案書送付状態も保証する
+        req_existing = db.scalars(
+            select(StudentScheduleRequestPublish).where(
+                StudentScheduleRequestPublish.period_id == period_id,
+                StudentScheduleRequestPublish.student_id == student_id,
+            )
+        ).first()
+        if req_existing is None:
+            db.add(StudentScheduleRequestPublish(period_id=period_id, student_id=student_id))
         existing = db.scalars(
             select(StudentSchedulePublish).where(
                 StudentSchedulePublish.period_id == period_id,
@@ -96,6 +142,7 @@ def publish_all_schedules(period_id: int) -> dict:
         if student["pending_count"] > 0:
             students_skipped.append(student["name"])
             continue
+        publish_student_schedule_request(period_id, student["id"])
         if publish_student_schedule(period_id, student["id"]):
             students_published += 1
 

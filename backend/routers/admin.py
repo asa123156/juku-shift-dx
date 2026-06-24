@@ -23,6 +23,8 @@ from schemas.assignment import (
     ManualAssignRequest,
     MatchRulesRequest,
     PublishScheduleRequest,
+    PublishScheduleRequestOnlyRequest,
+    PublishScheduleRequestOnlyResponse,
     PublishScheduleResponse,
     PublishTeacherScheduleRequest,
     PublishTeacherScheduleResponse,
@@ -89,6 +91,7 @@ from services.period_store import (
 from services.shift_excel import import_shift_excel_csv, import_shift_excel_xlsx, export_shift_excel_xlsx
 from services.schedule_publish_store import (
     publish_all_schedules,
+    publish_student_schedule_request,
     publish_student_schedule,
     publish_teacher_schedule,
 )
@@ -173,6 +176,26 @@ def publish_schedule_to_student(body: PublishScheduleRequest) -> PublishSchedule
     else:
         msg = f"「{student['name']}」にスケジュールを送信しました。生徒画面で確認できます。"
     return PublishScheduleResponse(
+        message=msg,
+        already_published=already,
+        sheets=AssignmentSheetsResponse.model_validate(sheets),
+    )
+
+
+@router.post("/assignments/publish-request", response_model=PublishScheduleRequestOnlyResponse)
+def publish_request_to_student(body: PublishScheduleRequestOnlyRequest) -> PublishScheduleRequestOnlyResponse:
+    """生徒に初回提案書（回答依頼）を送付する。"""
+    period = get_period(body.period_id)
+    if period.status != "COLLECTING":
+        raise HTTPException(status_code=409, detail="初回提案書の送付は COLLECTING 期間のみ可能です")
+    student = get_student(body.student_id)
+    already = not publish_student_schedule_request(body.period_id, body.student_id)
+    sheets = build_assignment_sheets(body.period_id)
+    if already:
+        msg = f"「{student['name']}」には既に提案書を送付済みです"
+    else:
+        msg = f"「{student['name']}」に提案書を送付しました。生徒画面で回答できます。"
+    return PublishScheduleRequestOnlyResponse(
         message=msg,
         already_published=already,
         sheets=AssignmentSheetsResponse.model_validate(sheets),

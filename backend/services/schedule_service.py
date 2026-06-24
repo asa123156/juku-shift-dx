@@ -9,7 +9,11 @@ from services.period_store import (
     open_dates_for_period,
     iter_dates,
 )
-from services.schedule_publish_store import is_schedule_published, is_teacher_schedule_published
+from services.schedule_publish_store import (
+    is_schedule_published,
+    is_schedule_request_published,
+    is_teacher_schedule_published,
+)
 from services.shift_store import get_teacher_submission, save_teacher_bulk
 from services.slot_timing import SLOT_KEYS, SLOT_NUMS, generate_time_slots
 from services.student_plan_store import list_plans_for_student
@@ -162,6 +166,11 @@ def assert_entity_editable(role: str, entity_id: int, period_id: int) -> None:
             status_code=409,
             detail="スケジュール送付済みのため直接編集できません。変更申請を行ってください。",
         )
+    if role == "student" and not is_schedule_request_published(period_id, entity_id):
+        raise HTTPException(
+            status_code=409,
+            detail="提案書が未送付です。教室長が初回送付後に回答してください。",
+        )
     if role == "teacher" and is_teacher_schedule_published(period_id, entity_id):
         raise HTTPException(
             status_code=409,
@@ -220,11 +229,13 @@ def bulk_save_submissions(
 
 def build_my_schedule(role: str, entity_id: int, period_id: int) -> dict:
     period = get_period(period_id)
+    requested = False
     if role == "student":
         published = is_schedule_published(period_id, entity_id)
+        requested = is_schedule_request_published(period_id, entity_id)
     else:
         published = is_teacher_schedule_published(period_id, entity_id)
-    readonly = period.status == "FINALIZED" or published
+    readonly = period.status == "FINALIZED" or published or (role == "student" and not requested)
     dates = [
         _merge_day(
             role, entity_id, period_id, iso_date, readonly, period.status, schedule_published=published
@@ -232,7 +243,9 @@ def build_my_schedule(role: str, entity_id: int, period_id: int) -> dict:
         for iso_date in open_dates_for_period(period)
     ]
     message = None
-    if readonly:
+    if role == "student" and period.status == "COLLECTING" and not requested and not published:
+        message = "まだ提案書が送付されていません。教室長の初回送付をお待ちください。"
+    elif readonly:
         if published and period.status != "FINALIZED":
             message = "担当者がスケジュールを確定しました。以下が確定スケジュールです。"
         else:
@@ -254,6 +267,7 @@ def build_my_schedule(role: str, entity_id: int, period_id: int) -> dict:
         "period_start_date": period.start_date,
         "period_end_date": period.end_date,
         "period_status": period.status,
+        "schedule_requested": requested,
         "schedule_published": published,
         "readonly": readonly,
         "time_slots": generate_time_slots(),

@@ -152,7 +152,13 @@ class AssignmentSheetStudent(BaseModel):
     pending_count: int = 0
     subjects: list[str] = Field(default_factory=list)
     subject_plans: list[StudentSubjectPlanItem] = Field(default_factory=list)
+    schedule_requested: bool = False
     schedule_published: bool = False
+
+
+class PublishScheduleRequestOnlyRequest(BaseModel):
+    period_id: int = Field(ge=1)
+    student_id: int = Field(ge=1)
 
 
 class PublishScheduleRequest(BaseModel):
@@ -182,6 +188,12 @@ class AssignmentSheetsResponse(BaseModel):
     teachers: list[AssignmentSheetTeacher]
     pending_by_date: dict[str, list[AssignmentRequestItem]]
     pending_total: int = 0
+
+
+class PublishScheduleRequestOnlyResponse(BaseModel):
+    message: str
+    already_published: bool = False
+    sheets: AssignmentSheetsResponse
 
 
 class PublishScheduleResponse(BaseModel):

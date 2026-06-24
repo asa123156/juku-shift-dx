@@ -72,7 +72,7 @@
   },
   {
     "email": "teacher2@example.com",
-    "password": "tch-002-d912",
+    "password": "tch-002-00e0",
     "role": "teacher",
     "teacher_id": 2,
     "student_id": null,
@@ -81,7 +81,7 @@
   },
   {
     "email": "teacher3@example.com",
-    "password": "tch-003-71a6",
+    "password": "tch-003-f75e",
     "role": "teacher",
     "teacher_id": 3,
     "student_id": null,
@@ -90,7 +90,7 @@
   },
   {
     "email": "student100@example.com",
-    "password": "std-100-326e",
+    "password": "std-100-fa66",
     "role": "student",
     "teacher_id": null,
     "student_id": 100,
@@ -99,7 +99,7 @@
   },
   {
     "email": "teacher4@example.com",
-    "password": "tch-004-05b9",
+    "password": "tch-004-d2c6",
     "role": "teacher",
     "teacher_id": 4,
     "student_id": null,
@@ -108,7 +108,7 @@
   },
   {
     "email": "teacher5@example.com",
-    "password": "tch-005-a3bb",
+    "password": "tch-005-6c20",
     "role": "teacher",
     "teacher_id": 5,
     "student_id": null,
@@ -117,7 +117,7 @@
   },
   {
     "email": "student101@example.com",
-    "password": "std-101-35bf",
+    "password": "std-101-1282",
     "role": "student",
     "teacher_id": null,
     "student_id": 101,
@@ -126,7 +126,7 @@
   },
   {
     "email": "student102@example.com",
-    "password": "std-102-c028",
+    "password": "std-102-5259",
     "role": "student",
     "teacher_id": null,
     "student_id": 102,
