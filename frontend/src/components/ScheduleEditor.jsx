@@ -1,41 +1,24 @@
 const SLOT_NUMS = [1, 2, 3, 4, 5, 6];
 
-const DEFAULT_STUDENT_SUBJECTS = ['数学', '英語', '国語', '理科', '社会'];
-
+/** 生徒提出: 空き（""）/ × / ◎（教室長設定・変更不可）のみ */
 export function parseStudentSlot(value) {
-  if (value === '◎') return { kind: '◎', subject: '' };
-  if (value === '×') return { kind: '×', subject: '' };
-  if (!value) return { kind: '', subject: '' };
-  if (value.startsWith('通常:')) return { kind: '通常', subject: value.slice(3) };
-  if (value.startsWith('講習:')) return { kind: '講習', subject: value.slice(3) };
-  return { kind: '', subject: '' };
-}
-
-export function encodeStudentSlot(kind, subject = '') {
-  if (kind === '×') return '×';
-  const sub = subject.trim();
-  if (kind === '通常') return sub ? `通常:${sub}` : '';
-  if (kind === '講習') return sub ? `講習:${sub}` : '';
-  return '';
+  if (value === '◎') return { kind: '◎' };
+  if (value === '×') return { kind: '×' };
+  return { kind: '空き' };
 }
 
 export function studentSlotLabel(status) {
   const parsed = parseStudentSlot(status);
   if (parsed.kind === '◎') return { text: '◎ 通常授業', cls: 'bg-slate-100 text-slate-700 border-slate-300' };
   if (parsed.kind === '×') return { text: '× 不可', cls: 'bg-red-50 text-red-700 border-red-200' };
-  if (parsed.kind === '通常') {
-    return {
-      text: parsed.subject ? `通常 ${parsed.subject}` : '通常',
-      cls: 'bg-slate-50 text-slate-800 border-slate-300',
-    };
+  return { text: '空き', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' };
+}
+
+function lessonKindBadge(kind) {
+  if (kind === '通常') {
+    return { text: '通常', cls: 'bg-slate-50 text-slate-800 border-slate-300' };
   }
-  if (parsed.kind === '講習') {
-    return {
-      text: parsed.subject ? `講習 ${parsed.subject}` : '講習',
-      cls: 'bg-blue-50 text-blue-800 border-blue-200',
-    };
-  }
-  return { text: '未選択', cls: 'bg-gray-50 text-gray-500 border-gray-200' };
+  return { text: '講習', cls: 'bg-blue-50 text-blue-800 border-blue-200' };
 }
 
 export function apiSlotsToState(slots) {
@@ -244,97 +227,81 @@ export function StudentSlotRow({
   onStatusChange,
   disabled,
   changed,
-  subjectPlans = [],
+  confirmedLesson = null,
+  pending = false,
 }) {
   const lockedSlot = locked || status === '◎';
   const readOnly = readonly || lockedSlot;
-  const parsed = parseStudentSlot(status);
   const badge = studentSlotLabel(status);
-  const subjects = subjectPlans.length
-    ? subjectPlans.map((p) => p.subject)
-    : DEFAULT_STUDENT_SUBJECTS;
-
-  const setKind = (kind) => {
-    if (kind === '×') {
-      onStatusChange('×');
-      return;
-    }
-    const current = parseStudentSlot(status);
-    const subject = current.kind === kind && current.subject
-      ? current.subject
-      : subjects[0] ?? '';
-    onStatusChange(encodeStudentSlot(kind, subject));
-  };
-
-  const setSubject = (subject) => {
-    if (parsed.kind !== '通常' && parsed.kind !== '講習') return;
-    onStatusChange(encodeStudentSlot(parsed.kind, subject));
-  };
+  const kindBadge = confirmedLesson ? lessonKindBadge(confirmedLesson.lesson_kind) : null;
 
   return (
     <div className={`rounded-2xl border p-4 transition-all ${
-      changed ? 'border-amber-400 bg-amber-50/50 ring-2 ring-amber-200' : 'border-gray-200 bg-white'
+      changed ? 'border-amber-400 bg-amber-50/50 ring-2 ring-amber-200'
+        : confirmedLesson ? 'bg-blue-50/60 border-blue-200'
+          : 'border-gray-200 bg-white'
     }`}>
       <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2">
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2 flex-wrap">
             <span className="text-sm font-bold text-gray-800">{period}コマ</span>
+            {time?.start && (
+              <span className="text-xs text-gray-500">{time.start}〜{time.end}</span>
+            )}
             {changed && <span className="text-xs text-amber-700 font-bold">変更</span>}
+            {pending && (
+              <span className="text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 font-bold">
+                変更申請中
+              </span>
+            )}
           </div>
-          {time?.start && (
-            <div className="text-sm text-gray-500 mt-0.5">{time.start}〜{time.end}</div>
+
+          {readOnly && confirmedLesson && (
+            <div className="mt-2">
+              <p className="text-lg font-bold text-blue-900">{confirmedLesson.subject}</p>
+              <p className="text-sm text-gray-700 mt-0.5">
+                {confirmedLesson.teacher_name?.includes('先生')
+                  ? confirmedLesson.teacher_name
+                  : `${confirmedLesson.teacher_name} 先生`}
+              </p>
+            </div>
           )}
         </div>
-        {readOnly ? (
-          <div className={`shrink-0 px-4 py-2 rounded-xl border text-sm font-bold ${badge.cls}`}>
-            {lockedSlot && status === '◎' ? '◎ 通常授業' : badge.text}
+
+        {lockedSlot && status === '◎' ? (
+          <div className="shrink-0 px-3 py-2 rounded-xl border text-sm font-bold bg-slate-100 text-slate-700 border-slate-300">
+            ◎ 通常授業
+          </div>
+        ) : readOnly && confirmedLesson && kindBadge ? (
+          <span className={`shrink-0 px-2.5 py-1 rounded-lg border text-xs font-bold ${kindBadge.cls}`}>
+            {kindBadge.text}
+          </span>
+        ) : readOnly ? (
+          <div className={`shrink-0 px-3 py-2 rounded-xl border text-sm font-bold ${badge.cls}`}>
+            {badge.text}
           </div>
         ) : (
-          <div className="flex flex-col items-end gap-2 shrink-0">
-            <div className="flex bg-gray-100 rounded-xl p-1 gap-1">
-              <button
-                type="button"
-                disabled={disabled}
-                onClick={() => setKind('通常')}
-                className={`px-3 h-11 rounded-lg font-bold text-sm transition-all disabled:opacity-50 ${
-                  parsed.kind === '通常' ? 'bg-slate-600 text-white shadow-sm' : 'text-gray-600 hover:bg-gray-200'
-                }`}
-              >
-                通常
-              </button>
-              <button
-                type="button"
-                disabled={disabled}
-                onClick={() => setKind('講習')}
-                className={`px-3 h-11 rounded-lg font-bold text-sm transition-all disabled:opacity-50 ${
-                  parsed.kind === '講習' ? 'bg-blue-600 text-white shadow-sm' : 'text-gray-600 hover:bg-gray-200'
-                }`}
-              >
-                講習
-              </button>
-              <button
-                type="button"
-                disabled={disabled}
-                onClick={() => setKind('×')}
-                className={`w-12 h-11 rounded-lg font-bold text-sm transition-all disabled:opacity-50 ${
-                  parsed.kind === '×' ? 'bg-red-500 text-white shadow-sm' : 'text-gray-500 hover:bg-gray-200'
-                }`}
-              >
-                ×
-              </button>
-            </div>
-            {(parsed.kind === '通常' || parsed.kind === '講習') && (
-              <select
-                value={parsed.subject || subjects[0] || ''}
-                disabled={disabled}
-                onChange={(e) => setSubject(e.target.value)}
-                className="text-sm border border-gray-300 rounded-lg px-2 py-1.5 bg-white font-bold text-gray-800 max-w-[140px]"
-              >
-                {subjects.map((s) => (
-                  <option key={s} value={s}>{s}</option>
-                ))}
-              </select>
-            )}
+          <div className="flex bg-gray-100 rounded-xl p-1 gap-1 shrink-0">
+            <button
+              type="button"
+              disabled={disabled}
+              onClick={() => onStatusChange('')}
+              className={`w-16 h-11 rounded-lg font-bold text-sm transition-all disabled:opacity-50 ${
+                status === '' ? 'bg-emerald-500 text-white shadow-sm' : 'text-gray-500 hover:bg-gray-200'
+              }`}
+            >
+              空
+            </button>
+            <button
+              type="button"
+              disabled={disabled}
+              onClick={() => onStatusChange('×')}
+              className={`w-16 h-11 rounded-lg font-bold text-sm transition-all disabled:opacity-50 ${
+                status === '×' ? 'bg-red-500 text-white shadow-sm' : 'text-gray-500 hover:bg-gray-200'
+              }`}
+            >
+              ×
+            </button>
           </div>
         )}
       </div>
@@ -407,9 +374,9 @@ export function StudentScheduleLegend() {
   return (
     <div className="flex flex-wrap justify-center gap-x-4 gap-y-1 mb-4 text-xs text-gray-500">
       <span><span className="text-slate-600 font-bold">◎</span> 通常授業（変更不可）</span>
-      <span><span className="text-slate-600 font-bold">通常</span> ＋教科</span>
-      <span><span className="text-blue-600 font-bold">講習</span> ＋教科</span>
+      <span><span className="text-emerald-600 font-bold">空</span> 都合つく</span>
       <span><span className="text-red-500 font-bold">×</span> 都合つかない</span>
+      <span className="text-gray-400">確定後は左に科目・右に通常/講習</span>
     </div>
   );
 }

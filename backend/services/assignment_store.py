@@ -40,6 +40,7 @@ def _assignment_to_dict(row: AssignmentRow) -> dict:
         "teacher_id": row.teacher_id,
         "teacher_name": row.teacher_name,
         "slot": row.slot,
+        "lesson_kind": getattr(row, "lesson_kind", None) or "講習",
     }
 
 
@@ -66,6 +67,7 @@ def _import_assignments_from_json(db: Session, raw: dict) -> None:
                     teacher_id=int(item["teacher_id"]),
                     teacher_name=item["teacher_name"],
                     slot=int(item["slot"]),
+                    lesson_kind=item.get("lesson_kind") or "講習",
                 )
             )
 
@@ -191,12 +193,16 @@ def save_assignments_for_date(iso_date: str, assignments: list[dict]) -> None:
                     teacher_id=int(item["teacher_id"]),
                     teacher_name=item["teacher_name"],
                     slot=int(item["slot"]),
+                    lesson_kind=item.get("lesson_kind") or "講習",
                 )
             )
         db.commit()
 
 
 def add_assignment(record: AssignmentRecord) -> None:
+    from services.assignment_kind import infer_lesson_kind
+
+    kind = record.lesson_kind or infer_lesson_kind(record.date, record.teacher_id, record.slot)
     with _session() as db:
         db.add(
             AssignmentRow(
@@ -207,6 +213,7 @@ def add_assignment(record: AssignmentRecord) -> None:
                 teacher_id=record.teacher_id,
                 teacher_name=record.teacher_name,
                 slot=record.slot,
+                lesson_kind=kind,
             )
         )
         db.commit()

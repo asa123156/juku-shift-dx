@@ -7,6 +7,7 @@ import StudentShift from './pages/StudentShift';
 import StudentSchedule from './pages/StudentSchedule';
 import AdminDashboard from './pages/AdminDashboard';
 import AdminManage from './pages/AdminManage';
+import StudentPlans from './pages/StudentPlans';
 import AssignmentStudentPicker from './pages/AssignmentStudentPicker';
 import AssignmentBoard from './pages/AssignmentBoard';
 import DataImport from './pages/DataImport';
@@ -21,6 +22,7 @@ export default function App() {
         <Route path="/student-schedule" element={<ProtectedRoute roles={['student']}><StudentSchedule /></ProtectedRoute>} />
         <Route path="/admin" element={<ProtectedRoute roles={['admin']}><AdminDashboard /></ProtectedRoute>} />
         <Route path="/admin/manage" element={<ProtectedRoute roles={['admin']}><AdminManage /></ProtectedRoute>} />
+        <Route path="/admin/student-plans" element={<ProtectedRoute roles={['admin']}><StudentPlans /></ProtectedRoute>} />
         <Route path="/admin/assignments" element={<ProtectedRoute roles={['admin']}><AssignmentStudentPicker /></ProtectedRoute>} />
         <Route path="/admin/assignments/:studentId" element={<ProtectedRoute roles={['admin']}><AssignmentBoard /></ProtectedRoute>} />
         <Route path="/import" element={<ProtectedRoute roles={['admin']}><DataImport /></ProtectedRoute>} />

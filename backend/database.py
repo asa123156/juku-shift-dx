@@ -58,3 +58,11 @@ def migrate_sqlite_schema() -> None:
         if "closed_dates" not in col_names:
             conn.execute(text("ALTER TABLE periods ADD COLUMN closed_dates JSON DEFAULT '[]'"))
             conn.commit()
+        assign_cols = {
+            row[1] for row in conn.execute(text("PRAGMA table_info(assignments)")).fetchall()
+        }
+        if "lesson_kind" not in assign_cols:
+            conn.execute(
+                text("ALTER TABLE assignments ADD COLUMN lesson_kind VARCHAR(10) DEFAULT '講習'")
+            )
+            conn.commit()

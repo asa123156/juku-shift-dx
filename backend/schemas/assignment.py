@@ -11,6 +11,7 @@ class AssignmentRecord(BaseModel):
     teacher_id: int
     teacher_name: str
     slot: int = Field(ge=1, le=SLOT_COUNT)
+    lesson_kind: str = Field(default="講習", pattern="^(通常|講習)$")
 
 
 class AssignmentCandidate(BaseModel):

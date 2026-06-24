@@ -12,7 +12,6 @@ from services.match_rules import (
 from services.student_slot_codec import (
     is_student_slot_assignable,
     student_slot_block_reason,
-    student_slot_preference_bonus,
 )
 from services.student_store import get_student_submission
 from services.teacher_slot_lanes import BLOCKED_AVAIL, free_teacher_lane_count
@@ -170,8 +169,6 @@ def score_candidate(
     date: str,
     current_assignments: list[dict],
     rules: MatchRules | None = None,
-    student_slots: dict[int, str] | None = None,
-    subject: str = "",
 ) -> int:
     rules = rules or MatchRules()
     score = 90 if teacher.slots.get(slot, "") == "" else 60
@@ -182,9 +179,6 @@ def score_candidate(
         occupied = teacher_occupied_slots(teacher.id, date, teacher.slots, current_assignments)
         if (slot - 1) in occupied or (slot + 1) in occupied:
             score += 15
-
-    if student_slots is not None and subject:
-        score += student_slot_preference_bonus(student_slots.get(slot, ""), subject)
 
     return min(score, 100)
 
@@ -207,13 +201,7 @@ def rank_candidates(
             {
                 **c,
                 "match_score": score_candidate(
-                    teacher,
-                    c["slot"],
-                    date,
-                    current_assignments,
-                    rules,
-                    student_slots=student_slots,
-                    subject=subject,
+                    teacher, c["slot"], date, current_assignments, rules
                 ),
             }
         )

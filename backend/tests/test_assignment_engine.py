@@ -15,9 +15,16 @@ def _teacher(tid: int, name: str, slots: dict[int, str]) -> Teacher:
     return Teacher(id=tid, name=name, slots=slots)
 
 
+def _student_slots(slots: list[int] | None = None) -> dict[int, str]:
+    nums = slots if slots is not None else list(range(1, 7))
+    return {n: "" for n in nums}
+
+
 def test_rejects_unavailable_teacher_slot() -> None:
     teachers = [_teacher(1, "田中", {1: "不可", 2: "待機", 3: "待機", 4: "待機"})]
-    result = get_assignment_candidates(1, "数学I", teachers, [], DATE)
+    result = get_assignment_candidates(
+        1, "数学I", teachers, [], DATE, student_slots=_student_slots([1, 2, 3, 4])
+    )
     assert all(c["slot"] != 1 for c in result)
 
 
@@ -29,7 +36,8 @@ def test_weekly_math_limit() -> None:
     ]
     rules = MatchRules(weekly_limits={"数学": 2})
     result = get_assignment_candidates(
-        1, "数学I", teachers, pool, DATE3, rules=rules, all_assignments=pool
+        1, "数学I", teachers, pool, DATE3, rules=rules, all_assignments=pool,
+        student_slots=_student_slots(),
     )
     assert result == []
 
@@ -41,7 +49,8 @@ def test_weekly_kokugo_limit() -> None:
     ]
     rules = MatchRules(weekly_limits={"国語": 1})
     result = get_assignment_candidates(
-        1, "国語", teachers, [], DATE2, rules=rules, all_assignments=pool
+        1, "国語", teachers, [], DATE2, rules=rules, all_assignments=pool,
+        student_slots=_student_slots(),
     )
     assert result == []
 
@@ -53,7 +62,8 @@ def test_no_teacher_gap_rule() -> None:
     ]
     rules = MatchRules(no_teacher_gaps=True, weekly_limits={})
     result = get_assignment_candidates(
-        1, "数学I", teachers, assignments, DATE, rules=rules
+        1, "数学I", teachers, assignments, DATE, rules=rules,
+        student_slots=_student_slots(),
     )
     assert all(not (c["teacher_id"] == 1 and c["slot"] == 3) for c in result)
 
@@ -65,7 +75,10 @@ def test_student_three_consecutive_limit() -> None:
         {"date": DATE, "student_id": 1, "subject": "国語", "teacher_id": 1, "slot": 2},
     ]
     rules = MatchRules(no_teacher_gaps=False, weekly_limits={"英語": 0})
-    result = get_assignment_candidates(1, "英語", teachers, assignments, DATE, rules=rules)
+    open_slots = {1: "", 2: "", 3: "", 4: ""}
+    result = get_assignment_candidates(
+        1, "英語", teachers, assignments, DATE, rules=rules, student_slots=open_slots
+    )
     assert all(c["slot"] != 3 for c in result)
     assert any(c["slot"] == 4 for c in result)
 
@@ -78,7 +91,10 @@ def test_teacher_four_consecutive_limit() -> None:
         {"date": DATE, "student_id": 4, "subject": "英語", "teacher_id": 1, "slot": 3},
     ]
     rules = MatchRules(no_teacher_gaps=False, weekly_limits={"理科": 0})
-    result = get_assignment_candidates(1, "理科", teachers, assignments, DATE, rules=rules)
+    result = get_assignment_candidates(
+        1, "理科", teachers, assignments, DATE, rules=rules,
+        student_slots=_student_slots(),
+    )
     assert all(not (c["teacher_id"] == 1 and c["slot"] == 4) for c in result)
     assert any(c["teacher_id"] == 1 and c["slot"] == 5 for c in result)
 
@@ -91,37 +107,37 @@ def test_no_weekly_limit_when_zero() -> None:
     ]
     rules = MatchRules(weekly_limits={"英語": 0})
     result = get_assignment_candidates(
-        1, "英語", teachers, pool, DATE3, rules=rules, all_assignments=pool
+        1, "英語", teachers, pool, DATE3, rules=rules, all_assignments=pool,
+        student_slots=_student_slots(),
     )
     assert len(result) > 0
 
 
 def test_rejects_student_unavailable_slot() -> None:
     teachers = [_teacher(1, "田中", {1: "待機", 2: "待機", 3: "待機", 4: "待機"})]
-    student_slots = {1: "×", 2: "通常:数学", 3: "", 4: "講習:英語"}
+    student_slots = {1: "×", 2: "", 3: "", 4: ""}
     result = get_assignment_candidates(
         1, "数学I", teachers, [], DATE, student_slots=student_slots
     )
     assert all(c["slot"] != 1 for c in result)
     assert any(c["slot"] == 2 for c in result)
-    assert all(c["slot"] != 4 for c in result)
+    assert any(c["slot"] == 4 for c in result)
 
 
-def test_rejects_subject_mismatch() -> None:
+def test_assignable_on_empty_slots() -> None:
     teachers = [_teacher(1, "田中", {1: "待機", 2: "待機", 3: "待機", 4: "待機"})]
-    student_slots = {1: "通常:国語", 2: "講習:英語", 3: "通常:数学", 4: ""}
+    student_slots = {1: "", 2: "", 3: "", 4: ""}
     result = get_assignment_candidates(
         1, "数学I", teachers, [], DATE, student_slots=student_slots
     )
-    assert all(c["slot"] not in (1, 2) for c in result)
-    assert any(c["slot"] == 3 for c in result)
+    assert any(c["slot"] == 1 for c in result)
     assert any(c["slot"] == 4 for c in result)
 
 
 def run_tests() -> None:
     test_rejects_unavailable_teacher_slot()
     test_rejects_student_unavailable_slot()
-    test_rejects_subject_mismatch()
+    test_assignable_on_empty_slots()
     test_weekly_math_limit()
     test_weekly_kokugo_limit()
     test_no_teacher_gap_rule()

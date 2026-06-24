@@ -31,7 +31,7 @@ def _confirmed_lessons(role: str, entity_id: int, iso_date: str, show: bool) -> 
                 "teacher_name": row["teacher_name"],
                 "student_name": row["student_name"],
                 "subject": row["subject"],
-                "lesson_kind": "講習",
+                "lesson_kind": row.get("lesson_kind") or "講習",
             }
         )
     return sorted(lessons, key=lambda x: x["slot"])
@@ -85,7 +85,9 @@ def _merge_day(
     merged: dict[str, str] = empty_slots()  # type: ignore[assignment]
     locked: dict[str, bool] = {}
     for key in SLOT_KEYS:
-        if show_fixed and base[key] == "◎":
+        student_regular = role == "student" and base[key] == "◎"
+        finalized_regular = show_fixed and base[key] == "◎"
+        if student_regular or finalized_regular:
             merged[key] = "◎"
             locked[key] = True
         elif submitted is not None:
@@ -127,7 +129,9 @@ def build_merged_slots_for_export(
 
     merged: dict[str, str] = empty_slots()  # type: ignore[assignment]
     for key in SLOT_KEYS:
-        if period.status == "FINALIZED" and base[key] == "◎":
+        student_regular = role == "student" and base[key] == "◎"
+        finalized_regular = period.status == "FINALIZED" and base[key] == "◎"
+        if student_regular or finalized_regular:
             merged[key] = "◎"
         elif submitted is not None:
             merged[key] = submitted[key]
@@ -234,6 +238,11 @@ def build_my_schedule(role: str, entity_id: int, period_id: int) -> dict:
         else:
             message = "シフトが確定しました。以下が確定スケジュールです。"
         message += " 変更が必要な場合は変更申請を行ってください。"
+    elif role == "student" and period.status == "COLLECTING":
+        message = (
+            "教室長から送付されたスケジュール表です。"
+            "◎ の通常授業以外のコマで、空き（都合つく）または ×（都合つかない）を入力して提出してください。"
+        )
     subject_plans: list[dict] = []
     if role == "student":
         subject_plans = list_plans_for_student(period_id, entity_id)

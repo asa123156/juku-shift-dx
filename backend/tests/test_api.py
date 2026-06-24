@@ -11,6 +11,13 @@ def _empty_slots(**overrides: str) -> dict[str, str]:
     return slots
 
 
+def _student_slots(**overrides: str) -> dict[str, str]:
+    """生徒提出: 未指定コマは × で埋める。"""
+    slots = {str(i): "×" for i in range(1, SLOT_COUNT + 1)}
+    slots.update({str(k): v for k, v in overrides.items()})
+    return slots
+
+
 def _reset_data() -> None:
     from scripts.generate_demo_data import main as generate_demo
     from scripts.reset_demo import reset_submissions_from_json
@@ -103,8 +110,21 @@ def run_tests() -> None:
             "entity_id": 1,
             "period_id": 1,
             "submissions": [
-                {"date": "2026-06-10", "slots": _empty_slots(**{"3": "×"})},
-                {"date": "2026-06-11", "slots": _empty_slots(**{"1": "×"})},
+                {
+                    "date": "2026-06-10",
+                    "slots": _student_slots(**{
+                        "1": "",
+                        "2": "",
+                        "3": "×",
+                    }),
+                },
+                {
+                    "date": "2026-06-11",
+                    "slots": _student_slots(**{
+                        "1": "×",
+                        "2": "",
+                    }),
+                },
             ],
         },
     )
@@ -117,6 +137,18 @@ def run_tests() -> None:
     )
     assert student_login.status_code == 200
     assert student_login.json()["role"] == "student"
+
+    student_schedule = client.get(
+        "/api/shifts/my-schedule",
+        params={"role": "student", "entity_id": 1, "period_id": 1},
+    ).json()
+    assert student_schedule["period_status"] == "COLLECTING"
+    assert student_schedule["readonly"] is False
+    assert student_schedule.get("message")
+    day_june10 = next(d for d in student_schedule["dates"] if d["date"] == "2026-06-10")
+    assert day_june10["slots"]["1"] == "◎"
+    assert day_june10["locked_slots"]["1"] is True
+    assert day_june10["slots"]["3"] == "×"
 
     periods = client.get("/api/admin/periods").json()
     assert len(periods["periods"]) >= 1
@@ -201,6 +233,16 @@ def run_tests() -> None:
     ).json()
     assert teacher_schedule.get("schedule_published") is True
 
+    pub_day = next(d for d in published_schedule["dates"] if d["date"] == "2026-06-10")
+    change_slot = None
+    for sk in map(str, range(1, SLOT_COUNT + 1)):
+        if pub_day["locked_slots"].get(sk):
+            continue
+        if pub_day["slots"].get(sk, "") != "×":
+            change_slot = int(sk)
+            break
+    assert change_slot is not None, "editable slot for change request"
+
     change_req = client.post(
         "/api/shifts/change-requests",
         json={
@@ -208,7 +250,7 @@ def run_tests() -> None:
             "role": "student",
             "entity_id": ready_student["id"],
             "date": "2026-06-10",
-            "slot": 2,
+            "slot": change_slot,
             "requested_symbol": "×",
             "reason": "テスト",
         },

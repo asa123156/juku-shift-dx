@@ -69,5 +69,68 @@
     "student_id": 99,
     "name": "テスト太郎",
     "redirect": "/student-schedule"
+  },
+  {
+    "email": "teacher2@example.com",
+    "password": "tch-002-d912",
+    "role": "teacher",
+    "teacher_id": 2,
+    "student_id": null,
+    "name": "佐藤 先生",
+    "redirect": "/student"
+  },
+  {
+    "email": "teacher3@example.com",
+    "password": "tch-003-71a6",
+    "role": "teacher",
+    "teacher_id": 3,
+    "student_id": null,
+    "name": "鈴木 先生",
+    "redirect": "/student"
+  },
+  {
+    "email": "student100@example.com",
+    "password": "std-100-326e",
+    "role": "student",
+    "teacher_id": null,
+    "student_id": 100,
+    "name": "グリッド太郎",
+    "redirect": "/student-schedule"
+  },
+  {
+    "email": "teacher4@example.com",
+    "password": "tch-004-05b9",
+    "role": "teacher",
+    "teacher_id": 4,
+    "student_id": null,
+    "name": "グリッド講師",
+    "redirect": "/student"
+  },
+  {
+    "email": "teacher5@example.com",
+    "password": "tch-005-a3bb",
+    "role": "teacher",
+    "teacher_id": 5,
+    "student_id": null,
+    "name": "CSV新規講師",
+    "redirect": "/student"
+  },
+  {
+    "email": "student101@example.com",
+    "password": "std-101-35bf",
+    "role": "student",
+    "teacher_id": null,
+    "student_id": 101,
+    "name": "CSV生徒太郎",
+    "redirect": "/student-schedule"
+  },
+  {
+    "email": "student102@example.com",
+    "password": "std-102-c028",
+    "role": "student",
+    "teacher_id": null,
+    "student_id": 102,
+    "name": "CSV生徒花子",
+    "redirect": "/student-schedule"
   }
 ]

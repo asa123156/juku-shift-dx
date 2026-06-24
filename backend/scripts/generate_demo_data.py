@@ -80,15 +80,52 @@ def build_dashboard(iso_date: str, day_idx: int) -> dict:
     }
 
 
+def build_period_bases(open_dates: list[str]) -> dict:
+    """教室長が設定する ◎ 通常コマ（生徒・講師）。"""
+    students: dict = {}
+    for sid, *_ in STUDENTS:
+        days: dict = {}
+        for idx, iso_date in enumerate(open_dates):
+            slots = {str(n): "" for n in SLOT_NUMS}
+            if sid == 1 or (idx + sid) % 3 != 2:
+                slots["1"] = "◎"
+            days[iso_date] = slots
+        students[str(sid)] = days
+
+    teachers: dict = {}
+    for tid in (1, 2, 3):
+        days = {}
+        for idx, iso_date in enumerate(open_dates):
+            slots = {str(n): "" for n in SLOT_NUMS}
+            if tid == 1 and iso_date == "2026-06-10":
+                slots["1"] = "◎"
+            elif tid == 1 and iso_date == "2026-06-11":
+                slots["2"] = "◎"
+            elif (idx + tid) % 4 == 0:
+                slots["1"] = "◎"
+            elif (idx + tid) % 4 == 1:
+                slots["2"] = "◎"
+            days[iso_date] = slots
+        teachers[str(tid)] = days
+
+    return {
+        "1": {
+            "teachers": teachers,
+            "students": students,
+            "_dates_initialized": open_dates,
+        }
+    }
+
+
 def build_student_submissions(open_dates: list[str]) -> dict:
-    """生徒ごとに ◎/×/空き パターンを日付に割当。"""
+    """生徒ごとに 空き/× パターンを日付に割当。"""
     patterns = {
-        1: ["◎", "", "×", "", "◎", ""],
-        2: ["", "◎", "", "×", "", "◎"],
-        3: ["×", "", "◎", "", "×", ""],
-        4: ["", "", "◎", "◎", "", ""],
-        5: ["◎", "×", "", "", "◎", "×"],
-        99: ["", "◎", "", "", "", "◎"],
+        1: ["", "×", "×", "", "×", "×"],
+        2: ["×", "", "×", "", "×", ""],
+        3: ["×", "", "", "×", "", "×"],
+        4: ["", "×", "", "×", "", "×"],
+        5: ["", "×", "", "×", "", ""],
+        99: ["", "×", "", "×", "", ""],
     }
     out: dict = {}
     for idx, iso_date in enumerate(open_dates):
@@ -207,6 +244,7 @@ def main() -> None:
             }
         ],
     })
+    write_json(DATA_DIR / "period-bases.json", build_period_bases(open_dates))
     write_json(DATA_DIR / "student-submissions.json", build_student_submissions(open_dates))
     write_json(DATA_DIR / "teacher-submissions.json", build_teacher_submissions(open_dates))
     write_json(DATA_DIR / "assignment-requests.json", build_assignment_requests(open_dates))

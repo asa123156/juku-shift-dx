@@ -62,22 +62,7 @@ function StudentSlotCell({ slot, pendingSubjects, onCancel }) {
   if (avail === '×') {
     return <div className="text-center py-1 text-lg font-bold text-gray-400">×</div>;
   }
-  if (avail.startsWith('通常:')) {
-    return (
-      <div className="text-center py-1">
-        <div className="text-[10px] font-bold text-slate-500">通常</div>
-        <div className="text-xs font-bold text-slate-800">{subjectAbbr(avail.slice(3))}</div>
-      </div>
-    );
-  }
-  if (avail.startsWith('講習:')) {
-    return (
-      <div className="text-center py-1">
-        <div className="text-xs font-bold text-blue-900">{subjectAbbr(avail.slice(3))}</div>
-      </div>
-    );
-  }
-  return <div className="text-center py-1 text-[11px] font-bold text-gray-300">空き</div>;
+  return <div className="text-center py-1 text-[11px] font-bold text-emerald-600">空き</div>;
 }
 
 function TeacherSlotCell({ slot, onAssign, onCancel }) {

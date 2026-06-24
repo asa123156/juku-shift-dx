@@ -107,6 +107,7 @@ class Assignment(Base):
     teacher_id: Mapped[int] = mapped_column(nullable=False)
     teacher_name: Mapped[str] = mapped_column(String(255), nullable=False)
     slot: Mapped[int] = mapped_column(nullable=False)
+    lesson_kind: Mapped[str] = mapped_column(String(10), nullable=False, default="講習")
 
 
 class AssignmentRequest(Base):

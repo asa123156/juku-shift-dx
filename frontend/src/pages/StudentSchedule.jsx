@@ -10,7 +10,6 @@ import {
   StudentSlotRow,
   PeriodBanner,
   DateTabs,
-  DayScheduleOverview,
   collectProposalChanges,
   submitChangeProposal,
 } from '../components/ScheduleEditor';
@@ -87,8 +86,9 @@ export default function StudentSchedule() {
       const locked = {};
       const lessons = {};
       const dateList = data.dates.map((d) => {
+        const lockedSlots = d.locked_slots ?? {};
+        locked[d.date] = lockedSlots;
         byDate[d.date] = apiSlotsToState(d.slots);
-        locked[d.date] = d.locked_slots ?? {};
         lessons[d.date] = d.confirmed_lessons ?? [];
         return d.date;
       });
@@ -282,8 +282,12 @@ export default function StudentSchedule() {
             </div>
           )}
 
-          {!proposalMode && scheduleMessage && readonly && (
-            <div className="mb-4 p-4 bg-emerald-50 border border-emerald-200 rounded-2xl text-sm text-emerald-900">
+          {!proposalMode && scheduleMessage && (
+            <div className={`mb-4 p-4 rounded-2xl text-sm border ${
+              readonly
+                ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
+                : 'bg-white border-emerald-200 text-emerald-900'
+            }`}>
               {scheduleMessage}
             </div>
           )}
@@ -292,38 +296,9 @@ export default function StudentSchedule() {
 
           {isLoading ? (
             <p className="text-gray-500 text-center py-12">読み込み中...</p>
-          ) : proposalMode ? (
-            <>
-              <StudentScheduleLegend />
-              <div className="space-y-3">
-                {(timeSlots.length ? timeSlots : [1, 2, 3, 4, 5, 6].map((s) => ({ slot: s, start: '', end: '' }))).map(({ slot, start, end }) => (
-                  <StudentSlotRow
-                    key={slot}
-                    period={slot}
-                    time={{ start, end }}
-                    status={shiftData[slot]}
-                    locked={lockedSlots[String(slot)]}
-                    readonly={false}
-                    disabled={isSubmitting}
-                    changed={originalDay[slot] !== shiftData[slot]}
-                    subjectPlans={subjectPlans}
-                    onStatusChange={(sym) => handleProposalSlotChange(slot, sym)}
-                  />
-                ))}
-              </div>
-            </>
-          ) : readonly ? (
-            <DayScheduleOverview
-              timeSlots={timeSlots}
-              slots={shiftData}
-              lessons={confirmedLessons}
-              lockedSlots={lockedSlots}
-              role="student"
-              pendingBySlot={pendingBySlot}
-            />
           ) : (
             <>
-              <StudentScheduleLegend />
+              {(proposalMode || !readonly) && <StudentScheduleLegend />}
               <div className="space-y-3">
                 {(timeSlots.length ? timeSlots : [1, 2, 3, 4, 5, 6].map((s) => ({ slot: s, start: '', end: '' }))).map(({ slot, start, end }) => (
                   <StudentSlotRow
@@ -332,10 +307,16 @@ export default function StudentSchedule() {
                     time={{ start, end }}
                     status={shiftData[slot]}
                     locked={lockedSlots[String(slot)]}
-                    readonly={false}
+                    readonly={!proposalMode && readonly}
                     disabled={isSubmitting}
-                    subjectPlans={subjectPlans}
-                    onStatusChange={(sym) => handleStatusChange(slot, sym)}
+                    changed={proposalMode && originalDay[slot] !== shiftData[slot]}
+                    confirmedLesson={!proposalMode && readonly ? confirmedLessons.find((l) => l.slot === slot) : null}
+                    pending={Boolean(pendingBySlot[slot])}
+                    onStatusChange={(sym) => (
+                      proposalMode
+                        ? handleProposalSlotChange(slot, sym)
+                        : handleStatusChange(slot, sym)
+                    )}
                   />
                 ))}
               </div>

@@ -21,6 +21,7 @@ export function AdminSidebar({ navigate, current }) {
       <nav className="flex-1 space-y-2">
         {link('/admin', 'ダッシュボード', 'dashboard')}
         {link('/admin/manage', '教室管理', 'manage')}
+        {link('/admin/student-plans', '講習希望設定', 'student-plans')}
         {link('/admin/assignments', '生徒の割り当て', 'assignments')}
         {link('/import', 'データインポート', 'import')}
       </nav>
