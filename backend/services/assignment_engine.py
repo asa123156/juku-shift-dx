@@ -14,7 +14,7 @@ from services.student_slot_codec import (
     student_slot_block_reason,
 )
 from services.student_store import get_student_submission
-from services.teacher_slot_lanes import BLOCKED_AVAIL, free_teacher_lane_count
+from services.teacher_slot_lanes import BLOCKED_AVAIL, MAX_TEACHER_LANES, free_teacher_lane_count
 
 
 @dataclass
@@ -30,9 +30,6 @@ def teachers_from_dashboard(dashboard: dict) -> list[Teacher]:
         slots = {i: row[f"s{i}"] for i in SLOTS}
         teachers.append(Teacher(id=row["id"], name=row["name"], slots=slots))
     return teachers
-
-
-MAX_STUDENTS_PER_TEACHER_SLOT = 2
 
 
 def count_teacher_slot_assignments(
@@ -56,7 +53,7 @@ def is_teacher_slot_full(
 ) -> bool:
     return (
         count_teacher_slot_assignments(teacher_id, slot, date, current_assignments)
-        >= MAX_STUDENTS_PER_TEACHER_SLOT
+        >= MAX_TEACHER_LANES
     )
 
 
@@ -76,8 +73,8 @@ def is_teacher_slot_occupied(
         if a["date"] == date and a["teacher_id"] == teacher_id and a["slot"] == slot
     ]
     if teacher_slots is not None:
-        return free_teacher_lane_count(avail, at_slot) <= 0
-    return len(at_slot) >= MAX_STUDENTS_PER_TEACHER_SLOT
+        return free_teacher_lane_count(avail, at_slot, max_lanes=MAX_TEACHER_LANES) <= 0
+    return len(at_slot) >= MAX_TEACHER_LANES
 
 
 def load_student_slots(student_id: int, iso_date: str) -> dict[int, str]:
@@ -99,6 +96,12 @@ def is_student_slot_occupied(
     )
 
 
+def _filter_teacher_list(teacher_list: list[Teacher], preferred_teacher_id: int | None) -> list[Teacher]:
+    if preferred_teacher_id is None:
+        return teacher_list
+    return [t for t in teacher_list if t.id == preferred_teacher_id]
+
+
 def get_assignment_candidates(
     student_id: int,
     subject: str,
@@ -108,6 +111,7 @@ def get_assignment_candidates(
     rules: MatchRules | None = None,
     all_assignments: list[dict] | None = None,
     student_slots: dict[int, str] | None = None,
+    preferred_teacher_id: int | None = None,
 ) -> list[dict]:
     """全講師×全コマの組み合わせから、NGルールを通過した候補を返す。"""
     rules = rules or MatchRules()
@@ -115,8 +119,9 @@ def get_assignment_candidates(
     if student_slots is None:
         student_slots = load_student_slots(student_id, date)
     valid_candidates: list[dict] = []
+    scoped_teachers = _filter_teacher_list(teacher_list, preferred_teacher_id)
 
-    for teacher in teacher_list:
+    for teacher in scoped_teachers:
         for slot in SLOTS:
             avail = teacher.slots.get(slot, "")
             if avail in BLOCKED_AVAIL:
@@ -218,9 +223,13 @@ def pick_best_candidate(
     rules: MatchRules | None = None,
     all_assignments: list[dict] | None = None,
     student_slots: dict[int, str] | None = None,
+    preferred_teacher_id: int | None = None,
 ) -> dict | None:
     if student_slots is None:
         student_slots = load_student_slots(student_id, date)
+    scoped_teachers = _filter_teacher_list(teacher_list, preferred_teacher_id)
+    if preferred_teacher_id is not None and not scoped_teachers:
+        return None
     candidates = get_assignment_candidates(
         student_id,
         subject,
@@ -230,6 +239,7 @@ def pick_best_candidate(
         rules=rules,
         all_assignments=all_assignments,
         student_slots=student_slots,
+        preferred_teacher_id=preferred_teacher_id,
     )
     if not candidates:
         return None
@@ -256,12 +266,18 @@ def validate_assignment(
     rules: MatchRules | None = None,
     all_assignments: list[dict] | None = None,
     student_slots: dict[int, str] | None = None,
+    preferred_teacher_id: int | None = None,
 ) -> str | None:
     """割当可能なら None、不可なら理由文字列。"""
     rules = rules or MatchRules()
     teacher = next((t for t in teacher_list if t.id == teacher_id), None)
     if teacher is None:
         return "講師が見つかりません"
+
+    if preferred_teacher_id is not None and teacher_id != preferred_teacher_id:
+        preferred = next((t for t in teacher_list if t.id == preferred_teacher_id), None)
+        label = preferred.name if preferred is not None else f"講師{preferred_teacher_id}"
+        return f"この教科の担当講師は{label}です"
 
     if student_slots is None:
         student_slots = load_student_slots(student_id, date)

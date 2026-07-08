@@ -8,13 +8,13 @@ from services.slot_timing import SLOT_COUNT, SLOT_KEYS, SLOT_NUMS
 SLOTS = SLOT_NUMS
 BLOCKED_TEACHER_STATUSES = frozenset({"不可", "通常授業", "×", "◎"})
 
-MATH_SUBJECTS = frozenset({"数学", "数学I", "数学II"})
+# 自動マッチング上、まとめて扱う教科グループ（算数→数学 / 物理・化学→理科）
+MATH_SUBJECTS = frozenset({"数学", "算数", "数学I", "数学II"})
+SCIENCE_SUBJECTS = frozenset({"理科", "物理", "化学"})
 
 # 裏ルール（UI から変更不可）: この長さ以上の連続占有は不可
 STUDENT_MAX_CONSECUTIVE_RUN = 3  # 生徒: 3コマ連続不可（最大2コマまで）
 TEACHER_MAX_CONSECUTIVE_RUN = 4  # 講師: 4コマ連続不可（最大3コマまで）
-
-MATH_SUBJECTS = frozenset({"数学", "数学I", "数学II"})
 
 DEFAULT_WEEKLY_LIMITS: dict[str, int] = {
     "国語": 1,
@@ -59,7 +59,17 @@ def week_key(iso_date: str) -> str:
 def normalize_limit_subject(subject: str) -> str:
     if subject in MATH_SUBJECTS:
         return "数学"
+    if subject in SCIENCE_SUBJECTS:
+        return "理科"
     return subject
+
+
+def _subject_group(normalized: str) -> frozenset[str] | None:
+    if normalized == "数学":
+        return MATH_SUBJECTS
+    if normalized == "理科":
+        return SCIENCE_SUBJECTS
+    return None
 
 
 def weekly_limit_for(subject: str, rules: MatchRules) -> int | None:
@@ -74,11 +84,8 @@ def count_weekly_subject(
     all_assignments: list[dict],
 ) -> int:
     wk = week_key(iso_date)
-    limit_key = normalize_limit_subject(subject)
-    if limit_key == "数学":
-        subjects = MATH_SUBJECTS
-    else:
-        subjects = {subject}
+    group = _subject_group(normalize_limit_subject(subject))
+    subjects = group if group is not None else {subject}
     return sum(
         1
         for a in all_assignments

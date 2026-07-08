@@ -310,7 +310,9 @@ export default function AssignmentBoard() {
   const teachers = sheets?.teachers ?? [];
   const currentStudent = students.find((s) => s.id === sid) ?? null;
   const currentTeacher = teachers[teacherIdx] ?? null;
-  const manualPending = manualTarget ? (sheets?.pending_by_date?.[manualTarget.date] ?? []) : [];
+  const manualPending = manualTarget
+    ? (sheets?.pending_by_date?.[manualTarget.date] ?? []).filter((r) => r.student_id === sid)
+    : [];
   const ruleSubjects = collectSubjects(students, matchRules.weekly_limits);
   const studentPending = currentStudent?.pending_count ?? 0;
   const schedulePublished = currentStudent?.schedule_published ?? false;
@@ -344,7 +346,9 @@ export default function AssignmentBoard() {
   };
 
   const handleManualAssign = async () => {
-    const pending = sheets?.pending_by_date?.[manualTarget?.date] ?? [];
+    const pending = (sheets?.pending_by_date?.[manualTarget?.date] ?? []).filter(
+      (r) => r.student_id === sid,
+    );
     const req = pending[selectedRequestIdx];
     if (!req || !manualTarget) return;
     try {
@@ -456,12 +460,12 @@ export default function AssignmentBoard() {
               {manualTarget.teacherName} — {manualTarget.date} {manualTarget.slot}コマ
             </p>
             {manualPending.length === 0 ? (
-              <p className="text-gray-500 text-sm mb-6">この日の未割当リクエストがありません。</p>
+              <p className="text-gray-500 text-sm mb-6">この生徒の未割当希望がありません。</p>
             ) : (
               <div className="space-y-2 mb-6 max-h-48 overflow-y-auto">
                 {manualPending.map((r, idx) => (
                   <button
-                    key={`${r.student_id}-${r.subject}`}
+                    key={`${r.student_id}-${r.subject}-${idx}`}
                     type="button"
                     onClick={() => setSelectedRequestIdx(idx)}
                     className={`w-full text-left p-3 rounded-xl border ${
@@ -538,8 +542,8 @@ export default function AssignmentBoard() {
         {isLoading ? (
           <p className="p-8 text-center text-gray-500">読み込み中...</p>
         ) : (
-          <div className="flex gap-3 items-start flex-col xl:flex-row">
-            <div className="w-full xl:w-1/2 flex flex-col min-h-[360px]">
+          <div className="flex flex-col gap-3 xl:grid xl:grid-cols-2 xl:grid-rows-[auto_1fr] xl:items-start">
+            <div className="order-1 xl:order-none xl:row-start-2 xl:col-start-1 w-full flex flex-col min-h-[360px]">
               <PaperSheet title="授業希望表" entityName={currentStudent?.name ?? ''} subtitle={`${dates.length}日分`}>
                 <MultiDayTable
                   timeSlots={timeSlots}
@@ -559,8 +563,11 @@ export default function AssignmentBoard() {
               </PaperSheet>
             </div>
 
-            <div className="w-full xl:w-1/2 flex flex-col min-h-[360px]">
+            <div className="order-2 xl:order-none xl:row-start-1 xl:col-start-2 w-full">
               <TeacherSwitcher teachers={teachers} selectedIdx={teacherIdx} onSelect={setTeacherIdx} />
+            </div>
+
+            <div className="order-3 xl:order-none xl:row-start-2 xl:col-start-2 w-full flex flex-col min-h-[360px]">
               {currentTeacher ? (
                 <PaperSheet title="講師スケジュール" entityName={currentTeacher.name} subtitle={`${dates.length}日分`}>
                   <p className="text-[10px] text-gray-500 mb-1 px-1">①② = 2レーン（通常◎があっても片方に追加割当可）</p>

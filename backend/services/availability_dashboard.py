@@ -1,23 +1,23 @@
 from copy import deepcopy
 
 from services.dashboard_builder import build_shift_dashboard_base_only
-from services.period_store import find_period_for_date, get_entity_base_day
+from services.period_store import find_period_for_date
 from services.shift_store import apply_teacher_submissions, compute_metrics
 from services.slot_timing import SLOT_NUMS, generate_time_slots
 
-AvailabilitySymbol = str  # "◎" | "×" | ""
+AvailabilitySymbol = str  # "×" | "" | "通常授業"
 
 
 def to_availability_symbol(status: str) -> AvailabilitySymbol:
     if status in ("通常授業", "◎"):
-        return "◎"
+        return "通常授業"
     if status in ("不可", "×"):
         return "×"
     return ""
 
 
 def build_availability_dashboard(iso_date: str) -> dict:
-    """講師シフトを ◎ / × / 空 の3値だけで返す。Excel ◎ は FINALIZED 時のみ反映。"""
+    """講師シフト（空き/×）を返す。通常授業は時間割表の割当で表示。"""
     base = build_shift_dashboard_base_only(iso_date)
     merged = apply_teacher_submissions(deepcopy(base))
 
@@ -25,14 +25,6 @@ def build_availability_dashboard(iso_date: str) -> dict:
     finalized = period is not None and period.status == "FINALIZED"
 
     merged["metrics"] = compute_metrics(merged.get("teachers", []))
-
-    if finalized and period is not None:
-        for teacher in merged.get("teachers", []):
-            tid = teacher["id"]
-            for slot_num in SLOT_NUMS:
-                day = get_entity_base_day(period.id, "teacher", tid, iso_date)
-                if day[str(slot_num)] == "◎":
-                    teacher[f"s{slot_num}"] = "◎"
 
     for teacher in merged.get("teachers", []):
         for slot_num in SLOT_NUMS:

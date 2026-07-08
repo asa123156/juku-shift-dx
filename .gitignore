@@ -152,6 +152,8 @@ activemq-data/
 .envrc
 .venv
 backend/juku_shift.db
+backend/output/**/*
+!backend/output/.gitkeep
 env/
 venv/
 ENV/

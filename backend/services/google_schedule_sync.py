@@ -73,8 +73,8 @@ def export_to_google_sheet(
     *,
     title: str | None = None,
 ) -> dict[str, str]:
-    content = export_juku_schedule_workbook(period_id)
     period = get_period(period_id)
+    content = export_juku_schedule_workbook(period_id, period.location_slug)
 
     if spreadsheet_ref:
         spreadsheet_id = parse_spreadsheet_id(spreadsheet_ref)

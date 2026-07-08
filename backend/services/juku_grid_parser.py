@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import io
-import json
 import re
 from datetime import date, datetime, time, timedelta
 from pathlib import Path
@@ -13,12 +12,9 @@ import pandas as pd
 from fastapi import HTTPException
 from openpyxl import load_workbook
 
-from config import BACKEND_DIR
 from services.entity_store import parse_grade_label
+from services.location_config import load_grid_map
 from services.slot_timing import generate_time_slots
-
-TEMPLATES_DIR = BACKEND_DIR / "templates"
-MAP_PATH = TEMPLATES_DIR / "hakutei_schedule_map.json"
 
 SheetDate = tuple[int, int]  # month, day
 
@@ -27,9 +23,9 @@ DAILY_SHEET_NAME = re.compile(r"^(\d+)月(\d+)日$")
 WEEKLY_RANGE_SHEET_NAME = re.compile(r"^(\d+)月(\d+)日[～~\-](\d+)月(\d+)日$")
 
 
-def load_grid_map() -> dict:
-    with MAP_PATH.open(encoding="utf-8") as f:
-        return json.load(f)
+def load_grid_map_for_location(location_slug: str | None = None) -> dict:
+    """拠点フォルダの schedule_map.json を読む（後方互換エイリアス）。"""
+    return load_grid_map(location_slug)
 
 
 def _cell_text(value: object) -> str:
@@ -315,6 +311,7 @@ def parse_sheet_records(
     raw: bytes,
     sheet_name: str,
     period_year: int,
+    location_slug: str | None = None,
 ) -> list[dict[str, Any]]:
     """指定シートから縦持ちレコードを抽出する（週次シートは行内日付も参照）。"""
     try:
@@ -332,7 +329,7 @@ def parse_sheet_records(
     if not rows:
         return []
 
-    cfg = load_grid_map()
+    cfg = load_grid_map(location_slug)
     dates = resolve_dates_for_sheet(sheet_name, rows, period_year, cfg)
     fallback = dates[0] if dates else date(period_year, 1, 1).isoformat()
     multi_day = len(dates) > 1 or not dates
@@ -352,6 +349,7 @@ def read_workbook_sheet(
     iso_date: str,
     period_year: int,
     sheet_name: str | None = None,
+    location_slug: str | None = None,
 ) -> tuple[list[dict[str, Any]], str]:
     try:
         wb = load_workbook(io.BytesIO(raw), read_only=True, data_only=True)
@@ -380,7 +378,7 @@ def read_workbook_sheet(
         raise HTTPException(status_code=400, detail="シートが空です")
 
     df = pd.DataFrame(rows)
-    cfg = load_grid_map()
+    cfg = load_grid_map(location_slug)
     resolved_date = iso_date
     if sheet_name is None:
         parsed = _parse_sheet_date_from_name(target_sheet, period_year)
@@ -402,6 +400,7 @@ def parse_juku_grid_xlsx(
     iso_date: str,
     period_year: int,
     sheet_name: str | None = None,
+    location_slug: str | None = None,
 ) -> list[dict[str, Any]]:
-    records, _ = read_workbook_sheet(raw, iso_date, period_year, sheet_name)
+    records, _ = read_workbook_sheet(raw, iso_date, period_year, sheet_name, location_slug)
     return records

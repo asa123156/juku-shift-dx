@@ -13,6 +13,13 @@ import {
   collectProposalChanges,
   submitChangeProposal,
 } from '../components/ScheduleEditor';
+import { UserPhaseStepper, SubjectPlansCard } from '../components/UserPhaseStepper';
+import {
+  fetchScheduleContext,
+  formatMonthLabel,
+  monthScheduleQuery,
+  shiftMonth,
+} from '../utils/scheduleContext';
 
 export default function StudentSchedule() {
   const navigate = useNavigate();
@@ -21,11 +28,15 @@ export default function StudentSchedule() {
 
   const [studentId, setStudentId] = useState(null);
   const [studentName, setStudentName] = useState('');
+  const [scheduleMode, setScheduleMode] = useState('regular');
+  const [calendarYear, setCalendarYear] = useState(null);
+  const [calendarMonth, setCalendarMonth] = useState(null);
   const [periodId, setPeriodId] = useState(null);
   const [periodName, setPeriodName] = useState('');
   const [periodStart, setPeriodStart] = useState('');
   const [periodEnd, setPeriodEnd] = useState('');
   const [periodStatus, setPeriodStatus] = useState(null);
+  const [scheduleRequested, setScheduleRequested] = useState(false);
   const [schedulePublished, setSchedulePublished] = useState(false);
   const [readonly, setReadonly] = useState(false);
   const [scheduleMessage, setScheduleMessage] = useState(null);
@@ -44,6 +55,9 @@ export default function StudentSchedule() {
 
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
+  const [submissionComplete, setSubmissionComplete] = useState(false);
+  const [resubmitPending, setResubmitPending] = useState(false);
   const [error, setError] = useState(null);
   const [message, setMessage] = useState(null);
 
@@ -64,12 +78,13 @@ export default function StudentSchedule() {
     );
   }, []);
 
-  const fetchSchedule = useCallback(async (sid, pid) => {
+  const fetchSchedule = useCallback(async (sid, pid, ctx) => {
     setIsLoading(true);
     setError(null);
     try {
+      const monthQuery = ctx ? monthScheduleQuery(ctx) : '';
       const res = await fetch(
-        `/api/shifts/my-schedule?role=student&entity_id=${sid}&period_id=${pid}`,
+        `/api/shifts/my-schedule?role=student&entity_id=${sid}&period_id=${pid}${monthQuery}`,
       );
       if (!res.ok) throw new Error('スケジュールの取得に失敗しました');
       const data = await res.json();
@@ -77,7 +92,11 @@ export default function StudentSchedule() {
       setPeriodName(data.period_name ?? '');
       setPeriodStart(data.period_start_date ?? '');
       setPeriodEnd(data.period_end_date ?? '');
+      setScheduleRequested(Boolean(data.schedule_requested));
       setSchedulePublished(Boolean(data.schedule_published));
+      setSubmissionComplete(Boolean(data.submission_complete));
+      setResubmitPending(Boolean(data.resubmit_pending));
+      setSubmitted(Boolean(data.submission_complete));
       setReadonly(data.readonly);
       setScheduleMessage(data.message);
       setTimeSlots(data.time_slots ?? []);
@@ -107,19 +126,54 @@ export default function StudentSchedule() {
 
   useEffect(() => {
     if (!studentId) return;
-    fetch('/api/admin/periods')
-      .then((r) => r.json())
-      .then((data) => {
-        const pid = data.active_period_id ?? data.periods[0]?.id;
-        if (pid) {
-          setPeriodId(pid);
-          fetchSchedule(studentId, pid);
-        } else {
-          setError('募集期間が設定されていません');
-          setIsLoading(false);
-        }
+    fetchScheduleContext()
+      .then((ctx) => {
+        setPeriodId(ctx.period_id);
+        setScheduleMode(ctx.mode);
+        setCalendarYear(ctx.calendar_year);
+        setCalendarMonth(ctx.month);
+        fetchSchedule(studentId, ctx.period_id, ctx);
+      })
+      .catch((err) => {
+        setError(err.message);
+        setIsLoading(false);
       });
   }, [studentId, fetchSchedule]);
+
+  const handleMonthChange = (delta) => {
+    if (!studentId || !periodId || scheduleMode !== 'regular') return;
+    const next = shiftMonth({ calendar_year: calendarYear, month: calendarMonth }, delta);
+    const ctx = { mode: 'regular', calendar_year: next.calendar_year, month: next.month };
+    setCalendarYear(next.calendar_year);
+    setCalendarMonth(next.month);
+    setSelectedDate(null);
+    fetchSchedule(studentId, periodId, ctx);
+  };
+
+  useEffect(() => {
+    if (!studentId || !periodId || schedulePublished || readonly) return undefined;
+    if (!submissionComplete && !resubmitPending) return undefined;
+    const ctx =
+      scheduleMode === 'regular'
+        ? { mode: 'regular', calendar_year: calendarYear, month: calendarMonth }
+        : null;
+    const timer = window.setInterval(
+      () => fetchSchedule(studentId, periodId, ctx),
+      15000,
+    );
+    return () => window.clearInterval(timer);
+  }, [
+    studentId,
+    periodId,
+    submissionComplete,
+    resubmitPending,
+    schedulePublished,
+    readonly,
+    fetchSchedule,
+    scheduleMode,
+    calendarYear,
+    calendarMonth,
+  ]);
 
   const startProposal = () => {
     setProposalByDate(JSON.parse(JSON.stringify(scheduleByDate)));
@@ -144,6 +198,7 @@ export default function StudentSchedule() {
     if (readonly || !selectedDate) return;
     const locked = lockedByDate[selectedDate]?.[String(slotNum)];
     if (locked) return;
+    setSubmitted(false);
     setScheduleByDate((prev) => ({
       ...prev,
       [selectedDate]: {
@@ -221,6 +276,34 @@ export default function StudentSchedule() {
         throw new Error(body.detail || '提出に失敗しました');
       }
       setMessage((await res.json()).message);
+      setSubmitted(true);
+      setSubmissionComplete(true);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleRequestChange = async () => {
+    if (!studentId || !periodId || resubmitPending) return;
+    setIsSubmitting(true);
+    setError(null);
+    try {
+      const res = await fetch('/api/shifts/resubmit-request', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          period_id: periodId,
+          role: 'student',
+          entity_id: studentId,
+          reason: '',
+        }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.detail || '変更申請に失敗しました');
+      setResubmitPending(true);
+      setMessage(body.message);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -240,6 +323,9 @@ export default function StudentSchedule() {
   });
 
   if (!isReady || !studentId) return null;
+
+  const isWaitingForFinal =
+    scheduleRequested && !schedulePublished && !readonly && submissionComplete && !proposalMode;
 
   return (
     <div className="min-h-screen bg-slate-100 flex justify-center p-4 font-sans">
@@ -261,17 +347,81 @@ export default function StudentSchedule() {
         </header>
 
         <main className="flex-1 overflow-y-auto p-4 bg-slate-50">
+          {!isWaitingForFinal && (
+            <>
           <PeriodBanner
             periodName={periodName}
             periodStart={periodStart}
             periodEnd={periodEnd}
             periodStatus={periodStatus}
+            scheduleRequested={scheduleRequested}
             schedulePublished={schedulePublished}
           />
 
-          {error && <p className="text-red-600 text-sm mb-3 p-3 bg-red-50 rounded-xl">{error}</p>}
-          {message && <p className="text-emerald-700 text-sm mb-3 p-3 bg-emerald-50 rounded-xl font-bold">{message}</p>}
+          {scheduleMode === 'regular' && calendarYear && calendarMonth && (
+            <div className="flex items-center justify-between mb-3 px-1">
+              <button
+                type="button"
+                onClick={() => handleMonthChange(-1)}
+                className="px-3 py-1.5 rounded-lg border border-gray-200 bg-white text-sm font-bold hover:bg-gray-50"
+              >
+                ←
+              </button>
+              <span className="text-sm font-bold text-gray-700">
+                {formatMonthLabel(calendarYear, calendarMonth)}
+              </span>
+              <button
+                type="button"
+                onClick={() => handleMonthChange(1)}
+                className="px-3 py-1.5 rounded-lg border border-gray-200 bg-white text-sm font-bold hover:bg-gray-50"
+              >
+                →
+              </button>
+            </div>
+          )}
 
+          {scheduleMode === 'cram' && (
+            <UserPhaseStepper
+              role="student"
+              readonly={readonly}
+              scheduleRequested={scheduleRequested}
+              schedulePublished={schedulePublished}
+              proposalMode={proposalMode}
+              periodStatus={periodStatus}
+            />
+          )}
+
+          {scheduleMode === 'cram' && <SubjectPlansCard plans={subjectPlans} />}
+            </>
+          )}
+
+          {error && <p className="text-red-600 text-sm mb-3 p-3 bg-red-50 rounded-xl">{error}</p>}
+          {message && !isWaitingForFinal && (
+            <p className="text-emerald-700 text-sm mb-3 p-3 bg-emerald-50 rounded-xl font-bold">{message}</p>
+          )}
+
+          {isWaitingForFinal ? (
+            <div className="flex flex-col items-center justify-center min-h-[50vh] text-center px-6">
+              <p className="text-3xl font-bold text-gray-900">提出完了</p>
+              {resubmitPending ? (
+                <p className="text-sm text-amber-800 mt-6 font-bold leading-relaxed">
+                  変更申請中です。
+                  <br />
+                  教室長の承認をお待ちください。
+                </p>
+              ) : (
+                <button
+                  type="button"
+                  onClick={handleRequestChange}
+                  disabled={isSubmitting}
+                  className="mt-10 px-8 py-3 rounded-2xl border-2 border-gray-300 bg-white hover:bg-gray-50 text-gray-800 font-bold shadow-sm disabled:opacity-50"
+                >
+                  {isSubmitting ? '送信中...' : '変更'}
+                </button>
+              )}
+            </div>
+          ) : (
+            <>
           {proposalMode && (
             <div className="mb-4 p-4 bg-amber-50 border border-amber-200 rounded-2xl text-sm text-amber-900">
               <p className="font-bold">変更したい都合を編集してください</p>
@@ -310,7 +460,11 @@ export default function StudentSchedule() {
                     readonly={!proposalMode && readonly}
                     disabled={isSubmitting}
                     changed={proposalMode && originalDay[slot] !== shiftData[slot]}
-                    confirmedLesson={!proposalMode && readonly ? confirmedLessons.find((l) => l.slot === slot) : null}
+                    confirmedLesson={
+                      !proposalMode && (readonly || scheduleRequested)
+                        ? confirmedLessons.find((l) => l.slot === slot)
+                        : null
+                    }
                     pending={Boolean(pendingBySlot[slot])}
                     onStatusChange={(sym) => (
                       proposalMode
@@ -322,10 +476,12 @@ export default function StudentSchedule() {
               </div>
             </>
           )}
+            </>
+          )}
         </main>
 
         <footer className="p-4 bg-white border-t border-gray-100 space-y-3">
-          {proposalMode ? (
+          {isWaitingForFinal ? null : proposalMode ? (
             <>
               <label className="block">
                 <span className="text-xs font-bold text-gray-600">変更理由（任意）</span>
@@ -343,17 +499,25 @@ export default function StudentSchedule() {
                 disabled={isSubmitting || proposalChanges.length === 0}
                 className="w-full bg-amber-500 hover:bg-amber-600 disabled:bg-amber-300 text-amber-950 font-bold py-4 rounded-2xl shadow-lg"
               >
-                {isSubmitting ? '送信中...' : `提案書を送信（${proposalChanges.length}件）`}
+                {isSubmitting ? '送信中...' : '修正した提案書を送信'}
               </button>
             </>
-          ) : !readonly && periodStatus === 'COLLECTING' && (
+          ) : scheduleMode === 'cram' && !readonly && !scheduleRequested && periodStatus === 'COLLECTING' ? (
+            <p className="text-center text-sm text-gray-500 py-2">
+              教室長から提案書が届くまでお待ちください
+            </p>
+          ) : !readonly && (
             <button
               type="button"
               onClick={handleBulkSubmit}
-              disabled={isLoading || isSubmitting}
-              className="w-full bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-400 text-white font-bold py-4 rounded-2xl shadow-lg"
+              disabled={isLoading || isSubmitting || submitted}
+              className={`w-full font-bold py-4 rounded-2xl shadow-lg text-white ${
+                submitted
+                  ? 'bg-emerald-500 disabled:opacity-100'
+                  : 'bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-400'
+              }`}
             >
-              {isSubmitting ? '提出中...' : '期間を一括提出する'}
+              {submitted ? '提出完了' : isSubmitting ? '提出中...' : '講習日程を提出する'}
             </button>
           )}
         </footer>

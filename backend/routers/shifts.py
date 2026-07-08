@@ -8,6 +8,8 @@ from schemas.change_request import (
     ChangeRequestCreateRequest,
     ChangeRequestCreateResponse,
     ChangeRequestItem,
+    ResubmitRequestCreateRequest,
+    ResubmitRequestCreateResponse,
 )
 from schemas.shifts import (
     ShiftDashboardResponse,
@@ -20,7 +22,12 @@ from services.availability_dashboard import build_availability_dashboard
 from services.dashboard_builder import build_shift_dashboard_base_only
 from services.data_loader import list_shift_dates, resolve_shift_date
 from services.period_store import find_period_for_date
-from services.schedule_service import assert_entity_editable, bulk_save_submissions, build_my_schedule
+from services.schedule_service import (
+    assert_entity_editable,
+    assert_proposal_received,
+    bulk_save_submissions,
+    build_my_schedule,
+)
 from services.shift_store import (
     build_teacher_submission_response,
     ensure_teacher_exists,
@@ -29,7 +36,7 @@ from services.shift_store import (
     update_single_slot,
 )
 from schemas.period import BulkShiftSubmitRequest, BulkShiftSubmitResponse, MyScheduleResponse
-from services.change_request_store import create_change_request
+from services.change_request_store import create_change_request, create_resubmit_request
 from services.slot_timing import SLOT_NUMS
 
 router = APIRouter(prefix="/api", tags=["shifts"])
@@ -103,8 +110,16 @@ def get_my_schedule(
     role: Annotated[str, Query(pattern="^(teacher|student)$")],
     entity_id: Annotated[int, Query(ge=1)],
     period_id: Annotated[int, Query(ge=1)],
+    calendar_year: Annotated[int | None, Query(ge=2000, le=2100)] = None,
+    month: Annotated[int | None, Query(ge=1, le=12)] = None,
 ) -> MyScheduleResponse:
-    payload = build_my_schedule(role, entity_id, period_id)
+    payload = build_my_schedule(
+        role,
+        entity_id,
+        period_id,
+        calendar_year=calendar_year,
+        month=month,
+    )
     return MyScheduleResponse.model_validate(payload)
 
 
@@ -116,6 +131,8 @@ def submit_shifts(body: ShiftSubmitRequest) -> ShiftSubmitResponse:
         if period.status == "FINALIZED":
             raise HTTPException(status_code=409, detail="確定済みのため提出できません")
         assert_entity_editable("teacher", body.teacher_id, period.id)
+        if period.status == "COLLECTING":
+            assert_proposal_received("teacher", body.teacher_id, period.id)
         if period.status == "COLLECTING":
             bulk_save_submissions(
                 "teacher",
@@ -153,6 +170,8 @@ def patch_shift_slot(body: ShiftSlotUpdateRequest) -> ShiftSubmitResponse:
         if period.status == "FINALIZED":
             raise HTTPException(status_code=409, detail="確定済みのため編集できません")
         assert_entity_editable("teacher", body.teacher_id, period.id)
+        if period.status == "COLLECTING":
+            assert_proposal_received("teacher", body.teacher_id, period.id)
     dashboard = build_shift_dashboard_base_only(body.date)
     ensure_teacher_exists(dashboard, body.teacher_id)
     dashboard_status = update_single_slot(
@@ -196,6 +215,21 @@ def submit_change_request(body: ChangeRequestCreateRequest) -> ChangeRequestCrea
         body.reason,
     )
     return ChangeRequestCreateResponse(
+        request=ChangeRequestItem.model_validate(row),
+        message="変更申請を送信しました。教室長の承認をお待ちください。",
+    )
+
+
+@router.post("/shifts/resubmit-request", response_model=ResubmitRequestCreateResponse)
+def submit_resubmit_request(body: ResubmitRequestCreateRequest) -> ResubmitRequestCreateResponse:
+    """確定前のスケジュール変更申請（教室長承認後に再提出）。"""
+    row = create_resubmit_request(
+        body.period_id,
+        body.role,
+        body.entity_id,
+        body.reason,
+    )
+    return ResubmitRequestCreateResponse(
         request=ChangeRequestItem.model_validate(row),
         message="変更申請を送信しました。教室長の承認をお待ちください。",
     )

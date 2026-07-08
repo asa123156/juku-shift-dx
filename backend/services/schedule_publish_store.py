@@ -4,7 +4,12 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from database import SessionLocal
-from models import StudentSchedulePublish, StudentScheduleRequestPublish, TeacherSchedulePublish
+from models import (
+    StudentSchedulePublish,
+    StudentScheduleRequestPublish,
+    TeacherSchedulePublish,
+    TeacherScheduleRequestPublish,
+)
 
 
 def _session() -> Session:
@@ -72,15 +77,6 @@ def publish_student_schedule_request(period_id: int, student_id: int) -> bool:
 def publish_student_schedule(period_id: int, student_id: int) -> bool:
     """確定送信。既に確定済みなら False。"""
     with _session() as db:
-        # 確定送付時は初回提案書送付状態も保証する
-        req_existing = db.scalars(
-            select(StudentScheduleRequestPublish).where(
-                StudentScheduleRequestPublish.period_id == period_id,
-                StudentScheduleRequestPublish.student_id == student_id,
-            )
-        ).first()
-        if req_existing is None:
-            db.add(StudentScheduleRequestPublish(period_id=period_id, student_id=student_id))
         existing = db.scalars(
             select(StudentSchedulePublish).where(
                 StudentSchedulePublish.period_id == period_id,
@@ -115,8 +111,45 @@ def list_published_teacher_ids(period_id: int) -> set[int]:
     return set(rows)
 
 
+def is_teacher_schedule_request_published(period_id: int, teacher_id: int) -> bool:
+    with _session() as db:
+        row = db.scalars(
+            select(TeacherScheduleRequestPublish).where(
+                TeacherScheduleRequestPublish.period_id == period_id,
+                TeacherScheduleRequestPublish.teacher_id == teacher_id,
+            )
+        ).first()
+    return row is not None
+
+
+def list_request_published_teacher_ids(period_id: int) -> set[int]:
+    with _session() as db:
+        rows = db.scalars(
+            select(TeacherScheduleRequestPublish.teacher_id).where(
+                TeacherScheduleRequestPublish.period_id == period_id
+            )
+        ).all()
+    return set(rows)
+
+
+def publish_teacher_schedule_request(period_id: int, teacher_id: int) -> bool:
+    """講師への初回提案書送付。既に送付済みなら False。"""
+    with _session() as db:
+        existing = db.scalars(
+            select(TeacherScheduleRequestPublish).where(
+                TeacherScheduleRequestPublish.period_id == period_id,
+                TeacherScheduleRequestPublish.teacher_id == teacher_id,
+            )
+        ).first()
+        if existing is not None:
+            return False
+        db.add(TeacherScheduleRequestPublish(period_id=period_id, teacher_id=teacher_id))
+        db.commit()
+        return True
+
+
 def publish_teacher_schedule(period_id: int, teacher_id: int) -> bool:
-    """講師への送付。既に送付済みなら False。"""
+    """講師への確定送付。既に送付済みなら False。"""
     with _session() as db:
         existing = db.scalars(
             select(TeacherSchedulePublish).where(
@@ -148,6 +181,7 @@ def publish_all_schedules(period_id: int) -> dict:
 
     teachers_published = 0
     for teacher in sheets["teachers"]:
+        publish_teacher_schedule_request(period_id, teacher["id"])
         if publish_teacher_schedule(period_id, teacher["id"]):
             teachers_published += 1
 

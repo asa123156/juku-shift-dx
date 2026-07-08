@@ -13,6 +13,7 @@ from config import DATA_DIR
 from database import SessionLocal
 from models import AdminOverride, Assignment as AssignmentRow
 from models import AssignmentRequest as AssignmentRequestRow
+from models import ClassSchedule as ClassScheduleRow
 from models import ShiftDashboard as ShiftDashboardRow
 from models import ShiftSubmission
 from models import StudentProfile, TeacherProfile
@@ -126,7 +127,7 @@ def _save_users(users: list[dict]) -> None:
 def _credential_keys(role: str) -> tuple[str, str]:
     if role == "student":
         return "student_id", "/student-schedule"
-    return "teacher_id", "/student"
+    return "teacher_id", "/teacher"
 
 
 def _default_login(role: str, entity_id: int) -> str:
@@ -322,6 +323,8 @@ def _validate_student_fields(school_level: str, grade_year: int) -> None:
 
 
 def _sync_student_name(student_id: int, name: str, db: Session) -> None:
+    for row in db.scalars(select(ClassScheduleRow).where(ClassScheduleRow.student_id == student_id)).all():
+        row.student_name = name
     for row in db.scalars(select(AssignmentRow).where(AssignmentRow.student_id == student_id)).all():
         row.student_name = name
     for row in db.scalars(select(AssignmentRequestRow).where(AssignmentRequestRow.student_id == student_id)).all():
@@ -329,6 +332,8 @@ def _sync_student_name(student_id: int, name: str, db: Session) -> None:
 
 
 def _sync_teacher_name(teacher_id: int, name: str, db: Session) -> None:
+    for row in db.scalars(select(ClassScheduleRow).where(ClassScheduleRow.teacher_id == teacher_id)).all():
+        row.teacher_name = name
     for row in db.scalars(select(AssignmentRow).where(AssignmentRow.teacher_id == teacher_id)).all():
         row.teacher_name = name
     for dash in db.scalars(select(ShiftDashboardRow)).all():
@@ -364,7 +369,11 @@ def create_teacher(name: str, color: str | None = None) -> dict:
         db.commit()
         db.refresh(row)
         _upsert_entity_user("teacher", row.id, row.name)
-        return _teacher_to_dict(row)
+        teacher = _teacher_to_dict(row)
+    from services.period_bootstrap import sync_teacher_to_all_period_dashboards
+
+    sync_teacher_to_all_period_dashboards(teacher["id"])
+    return teacher
 
 
 def update_student(student_id: int, name: str, school_level: str, grade_year: int) -> dict:
@@ -388,6 +397,7 @@ def delete_student(student_id: int) -> None:
         row = db.get(StudentProfile, student_id)
         if row is None:
             raise HTTPException(status_code=404, detail=f"Student id={student_id} not found")
+        db.query(ClassScheduleRow).filter(ClassScheduleRow.student_id == student_id).delete()
         db.query(AssignmentRow).filter(AssignmentRow.student_id == student_id).delete()
         db.query(AssignmentRequestRow).filter(AssignmentRequestRow.student_id == student_id).delete()
         db.query(StudentSubjectPlan).filter(StudentSubjectPlan.student_id == student_id).delete()
@@ -421,8 +431,12 @@ def delete_teacher(teacher_id: int) -> None:
         if row is None:
             raise HTTPException(status_code=404, detail=f"Teacher id={teacher_id} not found")
         assigned = db.scalar(
-            select(AssignmentRow.id).where(AssignmentRow.teacher_id == teacher_id).limit(1)
+            select(ClassScheduleRow.id).where(ClassScheduleRow.teacher_id == teacher_id).limit(1)
         )
+        if assigned is None:
+            assigned = db.scalar(
+                select(AssignmentRow.id).where(AssignmentRow.teacher_id == teacher_id).limit(1)
+            )
         if assigned is not None:
             raise HTTPException(status_code=409, detail="割当がある講師は削除できません。先に割当を解除してください。")
         for dash in db.scalars(select(ShiftDashboardRow)).all():

@@ -1,3 +1,5 @@
+"""割当リクエスト + class_schedules への委譲（assignments 互換 API）。"""
+
 import json
 from copy import deepcopy
 from datetime import date
@@ -9,9 +11,9 @@ from sqlalchemy.orm import Session
 
 from config import DATA_DIR
 from database import SessionLocal
-from models import Assignment as AssignmentRow
 from models import AssignmentRequest as AssignmentRequestRow
 from schemas.assignment import AssignmentRecord
+from services import class_schedule_store as cs
 
 ASSIGNMENTS_PATH = DATA_DIR / "assignments.json"
 REQUESTS_PATH = DATA_DIR / "assignment-requests.json"
@@ -31,45 +33,12 @@ def _read_json(path: Path) -> dict:
     return data
 
 
-def _assignment_to_dict(row: AssignmentRow) -> dict:
-    return {
-        "date": row.slot_date.isoformat(),
-        "student_id": row.student_id,
-        "student_name": row.student_name,
-        "subject": row.subject,
-        "teacher_id": row.teacher_id,
-        "teacher_name": row.teacher_name,
-        "slot": row.slot,
-        "lesson_kind": getattr(row, "lesson_kind", None) or "講習",
-    }
-
-
 def _request_to_dict(row: AssignmentRequestRow) -> dict:
     return {
         "student_id": row.student_id,
         "student_name": row.student_name,
         "subject": row.subject,
     }
-
-
-def _import_assignments_from_json(db: Session, raw: dict) -> None:
-    for iso_date, rows in raw.items():
-        if not isinstance(rows, list):
-            continue
-        slot_date = date.fromisoformat(iso_date)
-        for item in rows:
-            db.add(
-                AssignmentRow(
-                    slot_date=slot_date,
-                    student_id=int(item["student_id"]),
-                    student_name=item["student_name"],
-                    subject=item["subject"],
-                    teacher_id=int(item["teacher_id"]),
-                    teacher_name=item["teacher_name"],
-                    slot=int(item["slot"]),
-                    lesson_kind=item.get("lesson_kind") or "講習",
-                )
-            )
 
 
 def _import_requests_from_json(db: Session, raw: dict) -> None:
@@ -89,19 +58,11 @@ def _import_requests_from_json(db: Session, raw: dict) -> None:
 
 
 def seed_assignments_if_empty() -> None:
-    """DB が空のとき assignments.json から確定割当を投入する。"""
-    with _session() as db:
-        if db.scalar(select(AssignmentRow.id).limit(1)) is not None:
-            return
-        raw = _read_json(ASSIGNMENTS_PATH)
-        if not raw:
-            return
-        _import_assignments_from_json(db, raw)
-        db.commit()
+    """互換: JSON seed は使わない（class_schedules が正本）。"""
+    cs.migrate_from_assignments_table()
 
 
 def seed_assignment_requests_if_empty() -> None:
-    """DB が空のとき assignment-requests.json から割当リクエストを投入する。"""
     with _session() as db:
         if db.scalar(select(AssignmentRequestRow.id).limit(1)) is not None:
             return
@@ -113,57 +74,35 @@ def seed_assignment_requests_if_empty() -> None:
 
 
 def reset_assignments_for_tests() -> None:
-    """テスト用: 割当データをすべて削除する。"""
     from database import Base, engine
 
     import models  # noqa: F401
 
     Base.metadata.create_all(bind=engine)
+    cs.reset_class_schedules_for_tests()
     with _session() as db:
-        db.query(AssignmentRow).delete()
         db.query(AssignmentRequestRow).delete()
         db.commit()
 
 
 def reset_assignments_from_json() -> tuple[int, int]:
-    """デモ用: assignments.json / assignment-requests.json から再投入する。"""
     reset_assignments_for_tests()
-    raw_a = _read_json(ASSIGNMENTS_PATH)
     raw_r = _read_json(REQUESTS_PATH)
-    assign_count = 0
     request_count = 0
     with _session() as db:
-        if raw_a:
-            _import_assignments_from_json(db, raw_a)
-            assign_count = sum(len(v) for v in raw_a.values() if isinstance(v, list))
         if raw_r:
             _import_requests_from_json(db, raw_r)
             request_count = sum(len(v) for v in raw_r.values() if isinstance(v, list))
         db.commit()
-    return assign_count, request_count
+    return 0, request_count
 
 
 def get_assignments_between(start: str, end: str) -> list[dict]:
-    start_d = date.fromisoformat(start)
-    end_d = date.fromisoformat(end)
-    with _session() as db:
-        rows = db.scalars(
-            select(AssignmentRow)
-            .where(AssignmentRow.slot_date >= start_d, AssignmentRow.slot_date <= end_d)
-            .order_by(AssignmentRow.id)
-        ).all()
-    return deepcopy([_assignment_to_dict(row) for row in rows])
+    return cs.get_assignments_between(start, end)
 
 
 def get_assignments_for_date(iso_date: str) -> list[dict]:
-    target_date = date.fromisoformat(iso_date)
-    with _session() as db:
-        rows = db.scalars(
-            select(AssignmentRow)
-            .where(AssignmentRow.slot_date == target_date)
-            .order_by(AssignmentRow.id)
-        ).all()
-    return deepcopy([_assignment_to_dict(row) for row in rows])
+    return cs.get_assignments_for_date(iso_date)
 
 
 def get_assignment_requests_for_date(iso_date: str) -> list[dict]:
@@ -178,45 +117,11 @@ def get_assignment_requests_for_date(iso_date: str) -> list[dict]:
 
 
 def save_assignments_for_date(iso_date: str, assignments: list[dict]) -> None:
-    target_date = date.fromisoformat(iso_date)
-    with _session() as db:
-        db.query(AssignmentRow).filter(AssignmentRow.slot_date == target_date).delete(
-            synchronize_session=False
-        )
-        for item in assignments:
-            db.add(
-                AssignmentRow(
-                    slot_date=target_date,
-                    student_id=int(item["student_id"]),
-                    student_name=item["student_name"],
-                    subject=item["subject"],
-                    teacher_id=int(item["teacher_id"]),
-                    teacher_name=item["teacher_name"],
-                    slot=int(item["slot"]),
-                    lesson_kind=item.get("lesson_kind") or "講習",
-                )
-            )
-        db.commit()
+    cs.save_assignments_for_date(iso_date, assignments)
 
 
 def add_assignment(record: AssignmentRecord) -> None:
-    from services.assignment_kind import infer_lesson_kind
-
-    kind = record.lesson_kind or infer_lesson_kind(record.date, record.teacher_id, record.slot)
-    with _session() as db:
-        db.add(
-            AssignmentRow(
-                slot_date=date.fromisoformat(record.date),
-                student_id=record.student_id,
-                student_name=record.student_name,
-                subject=record.subject,
-                teacher_id=record.teacher_id,
-                teacher_name=record.teacher_name,
-                slot=record.slot,
-                lesson_kind=kind,
-            )
-        )
-        db.commit()
+    cs.add_assignment(record)
 
 
 def remove_assignment_at_slot(
@@ -225,17 +130,7 @@ def remove_assignment_at_slot(
     slot: int,
     student_id: int | None = None,
 ) -> None:
-    target_date = date.fromisoformat(iso_date)
-    with _session() as db:
-        query = db.query(AssignmentRow).filter(
-            AssignmentRow.slot_date == target_date,
-            AssignmentRow.teacher_id == teacher_id,
-            AssignmentRow.slot == slot,
-        )
-        if student_id is not None:
-            query = query.filter(AssignmentRow.student_id == student_id)
-        query.delete(synchronize_session=False)
-        db.commit()
+    cs.remove_assignment_at_slot(iso_date, teacher_id, slot, student_id=student_id)
 
 
 def cancel_assignment_at_slot(
@@ -244,32 +139,20 @@ def cancel_assignment_at_slot(
     slot: int,
     student_id: int | None = None,
 ) -> dict | None:
-    """割当を解除し、未割当リクエストに戻す。"""
-    target_date = date.fromisoformat(iso_date)
-    with _session() as db:
-        query = select(AssignmentRow).where(
-            AssignmentRow.slot_date == target_date,
-            AssignmentRow.teacher_id == teacher_id,
-            AssignmentRow.slot == slot,
+    record = cs.cancel_assignment_at_slot(iso_date, teacher_id, slot, student_id=student_id)
+    if record is None:
+        return None
+    if not record.get("is_fixed"):
+        append_assignment_requests(
+            iso_date,
+            [
+                {
+                    "student_id": record["student_id"],
+                    "student_name": record["student_name"],
+                    "subject": record["subject"],
+                }
+            ],
         )
-        if student_id is not None:
-            query = query.where(AssignmentRow.student_id == student_id)
-        row = db.scalars(query).first()
-        if row is None:
-            return None
-        record = _assignment_to_dict(row)
-        db.delete(row)
-        db.commit()
-    append_assignment_requests(
-        iso_date,
-        [
-            {
-                "student_id": record["student_id"],
-                "student_name": record["student_name"],
-                "subject": record["subject"],
-            }
-        ],
-    )
     return record
 
 
@@ -297,7 +180,6 @@ def clear_request_fulfilled(iso_date: str, student_id: int, subject: str) -> Non
 
 
 def append_assignment_requests(iso_date: str, requests: list[dict]) -> tuple[int, int]:
-    """リクエストを追加する。戻り値: (追加件数, スキップ件数)"""
     target_date = date.fromisoformat(iso_date)
     with _session() as db:
         existing = db.scalars(

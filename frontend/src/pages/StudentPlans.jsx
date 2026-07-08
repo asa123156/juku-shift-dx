@@ -3,17 +3,22 @@ import { useNavigate } from 'react-router-dom';
 import { useAdminSession } from '../hooks/useAdminSession';
 import { AdminSidebar } from '../components/AdminSidebar';
 
-const SUBJECT_PRESETS = ['国語', '数学', '数学I', '数学II', '英語', '理科', '社会'];
+const SUBJECT_PRESETS = ['数学', '算数', '理科', '物理', '化学', '国語', '社会', '英語'];
 
 const LEVEL_ORDER = { elementary: 0, middle: 1, high: 2 };
 
 function formatPlanSummary(plans) {
   if (!plans?.length) return '未設定';
-  return plans.map((p) => `${p.subject}×${p.slot_count}`).join('、');
+  return plans
+    .map((p) => {
+      const teacher = p.teacher_name ? `→${p.teacher_name}` : '';
+      return `${p.subject}×${p.slot_count}${teacher}`;
+    })
+    .join('、');
 }
 
 function emptyPlanRow() {
-  return { subject: '数学', slot_count: 1 };
+  return { subject: '', slot_count: 1, teacher_id: null };
 }
 
 function totalSlots(plans) {
@@ -48,6 +53,7 @@ export default function StudentPlans() {
   const [periods, setPeriods] = useState([]);
   const [periodId, setPeriodId] = useState(null);
   const [students, setStudents] = useState([]);
+  const [teachers, setTeachers] = useState([]);
   const [periodPlans, setPeriodPlans] = useState([]);
   const [selectedStudentId, setSelectedStudentId] = useState(null);
   const [planRows, setPlanRows] = useState([emptyPlanRow()]);
@@ -81,15 +87,18 @@ export default function StudentPlans() {
   const loadAll = useCallback(async () => {
     setError(null);
     try {
-      const [pRes, sRes] = await Promise.all([
+      const [pRes, sRes, tRes] = await Promise.all([
         fetch('/api/admin/periods'),
         fetch('/api/admin/students'),
+        fetch('/api/admin/teachers'),
       ]);
-      if (!pRes.ok || !sRes.ok) throw new Error('データの取得に失敗しました');
+      if (!pRes.ok || !sRes.ok || !tRes.ok) throw new Error('データの取得に失敗しました');
       const pData = await pRes.json();
       const sData = await sRes.json();
+      const tData = await tRes.json();
       setPeriods(pData.periods ?? []);
       setStudents(sData.students ?? []);
+      setTeachers(tData.teachers ?? []);
       const pid = pData.active_period_id ?? pData.periods?.[0]?.id ?? null;
       setPeriodId(pid);
     } catch (err) {
@@ -111,7 +120,15 @@ export default function StudentPlans() {
     setMessage(null);
     setError(null);
     const existing = plansByStudentId[student.id] ?? [];
-    setPlanRows(existing.length ? existing.map((p) => ({ ...p })) : [emptyPlanRow()]);
+    setPlanRows(
+      existing.length
+        ? existing.map((p) => ({
+            subject: p.subject,
+            slot_count: p.slot_count,
+            teacher_id: p.teacher_id ?? null,
+          }))
+        : [emptyPlanRow()],
+    );
   };
 
   const handlePeriodChange = (e) => {
@@ -134,7 +151,13 @@ export default function StudentPlans() {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            plans: planRows.filter((r) => r.subject?.trim() && r.slot_count > 0),
+            plans: planRows
+              .filter((r) => r.subject?.trim() && r.slot_count > 0)
+              .map((r) => ({
+                subject: r.subject.trim(),
+                slot_count: r.slot_count,
+                teacher_id: r.teacher_id || null,
+              })),
           }),
         },
       );
@@ -182,7 +205,7 @@ export default function StudentPlans() {
         <header className="bg-white border-b px-6 py-5 shrink-0">
           <h2 className="text-2xl font-bold text-gray-800">講習希望設定</h2>
           <p className="text-sm text-gray-500 mt-1">
-            生徒ごとに教科とコマ数を設定します。保存すると割当ボード用の未割当リクエストが自動生成されます。
+            生徒ごとに教科・コマ数・担当講師を設定します。担当講師を指定すると自動割当・候補抽出でその講師のみ使われます。
           </p>
           <div className="mt-4 flex flex-wrap gap-3 items-end">
             <label className="min-w-[220px]">
@@ -274,10 +297,10 @@ export default function StudentPlans() {
               {!selectedStudent ? (
                 <div className="h-full flex flex-col items-center justify-center text-gray-400">
                   <p className="text-lg font-bold">← 左の一覧から生徒を選んでください</p>
-                  <p className="text-sm mt-2">教科と講習期間中のコマ数を設定できます</p>
+                  <p className="text-sm mt-2">教科・コマ数・担当講師を設定できます</p>
                 </div>
               ) : (
-                <div className="max-w-xl">
+                <div className="max-w-2xl">
                   <div className="mb-6">
                     <h3 className="text-xl font-bold text-gray-900">{selectedStudent.name}</h3>
                     <p className="text-sm text-gray-500 mt-0.5">
@@ -290,9 +313,14 @@ export default function StudentPlans() {
                       <p className="font-bold">確定済みの講習期間のため編集できません。</p>
                       <ul className="mt-3 space-y-2">
                         {(plansByStudentId[selectedStudentId] ?? []).map((p) => (
-                          <li key={p.subject} className="flex justify-between border-b border-amber-100 pb-2">
+                          <li key={p.subject} className="flex justify-between gap-3 border-b border-amber-100 pb-2">
                             <span className="font-bold">{p.subject}</span>
-                            <span>{p.slot_count} コマ</span>
+                            <span className="text-right">
+                              {p.slot_count} コマ
+                              {p.teacher_name && (
+                                <span className="block text-xs text-amber-800/80">担当: {p.teacher_name}</span>
+                              )}
+                            </span>
                           </li>
                         ))}
                         {(plansByStudentId[selectedStudentId] ?? []).length === 0 && (
@@ -309,17 +337,23 @@ export default function StudentPlans() {
                         >
                           <label className="flex-1 min-w-[140px]">
                             <span className="text-xs font-bold text-gray-600">教科</span>
-                            <input
-                              list="subject-presets"
+                            <select
                               value={row.subject}
                               onChange={(e) => {
                                 const next = [...planRows];
                                 next[idx] = { ...next[idx], subject: e.target.value };
                                 setPlanRows(next);
                               }}
-                              className="mt-1 w-full border rounded-lg px-3 py-2"
-                              placeholder="例: 数学"
-                            />
+                              className="mt-1 w-full border rounded-lg px-3 py-2 bg-white"
+                            >
+                              <option value="">教科を選択</option>
+                              {row.subject && !SUBJECT_PRESETS.includes(row.subject) && (
+                                <option value={row.subject}>{row.subject}</option>
+                              )}
+                              {SUBJECT_PRESETS.map((sub) => (
+                                <option key={sub} value={sub}>{sub}</option>
+                              ))}
+                            </select>
                           </label>
                           <label className="w-28">
                             <span className="text-xs font-bold text-gray-600">コマ数</span>
@@ -336,6 +370,27 @@ export default function StudentPlans() {
                               className="mt-1 w-full border rounded-lg px-3 py-2"
                             />
                           </label>
+                          <label className="flex-1 min-w-[160px]">
+                            <span className="text-xs font-bold text-gray-600">担当講師</span>
+                            <select
+                              value={row.teacher_id ?? ''}
+                              onChange={(e) => {
+                                const next = [...planRows];
+                                const raw = e.target.value;
+                                next[idx] = {
+                                  ...next[idx],
+                                  teacher_id: raw ? Number(raw) : null,
+                                };
+                                setPlanRows(next);
+                              }}
+                              className="mt-1 w-full border rounded-lg px-3 py-2 bg-white"
+                            >
+                              <option value="">指定なし</option>
+                              {teachers.map((t) => (
+                                <option key={t.id} value={t.id}>{t.name}</option>
+                              ))}
+                            </select>
+                          </label>
                           <button
                             type="button"
                             onClick={() => setPlanRows(planRows.filter((_, i) => i !== idx))}
@@ -346,12 +401,6 @@ export default function StudentPlans() {
                           </button>
                         </div>
                       ))}
-
-                      <datalist id="subject-presets">
-                        {SUBJECT_PRESETS.map((sub) => (
-                          <option key={sub} value={sub} />
-                        ))}
-                      </datalist>
 
                       <div className="flex flex-wrap gap-2 pt-2">
                         <button
@@ -371,7 +420,8 @@ export default function StudentPlans() {
                       </div>
 
                       <p className="text-xs text-gray-500 leading-relaxed">
-                        コマ数は開校日に分散して未割当リクエストになります（1日1教科1件まで）。
+                        未割当は希望コマ数と時間割表の割当数の差分として計算されます。
+                        担当講師を指定すると、その教科は自動割当・手動割当候補でその講師に限定されます。
                         合計 {totalSlots(planRows.filter((r) => r.subject?.trim() && r.slot_count > 0))} コマ
                       </p>
                     </form>

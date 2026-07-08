@@ -1,15 +1,19 @@
 const SLOT_NUMS = [1, 2, 3, 4, 5, 6];
 
-/** 生徒提出: 空き（""）/ × / ◎（教室長設定・変更不可）のみ */
+function isRegularAssignment(a) {
+  return Boolean(a?.is_fixed || a?.lesson_kind === '通常');
+}
+
+/** 生徒提出: 空き（""）/ × のみ。通常授業は時間割表の割当で表示 */
 export function parseStudentSlot(value) {
-  if (value === '◎') return { kind: '◎' };
   if (value === '×') return { kind: '×' };
+  if (value === '◎') return { kind: '通常授業' };
   return { kind: '空き' };
 }
 
 export function studentSlotLabel(status) {
   const parsed = parseStudentSlot(status);
-  if (parsed.kind === '◎') return { text: '◎ 通常授業', cls: 'bg-slate-100 text-slate-700 border-slate-300' };
+  if (parsed.kind === '通常授業') return { text: '通常授業', cls: 'bg-slate-100 text-slate-800 border-slate-300' };
   if (parsed.kind === '×') return { text: '× 不可', cls: 'bg-red-50 text-red-700 border-red-200' };
   return { text: '空き', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' };
 }
@@ -40,12 +44,19 @@ function formatPeriodRange(start, end) {
 
 function slotLabel(status, role = 'teacher') {
   if (role === 'student') return studentSlotLabel(status);
-  if (status === '◎') return { text: '◎ 通常授業', cls: 'bg-slate-100 text-slate-700 border-slate-300' };
+  if (status === '◎' || status === '通常授業') return { text: '通常授業', cls: 'bg-slate-100 text-slate-800 border-slate-300' };
   if (status === '×') return { text: '× 不可', cls: 'bg-red-50 text-red-700 border-red-200' };
   return { text: '空き', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' };
 }
 
-export function PeriodBanner({ periodName, periodStart, periodEnd, periodStatus, schedulePublished }) {
+export function PeriodBanner({
+  periodName,
+  periodStart,
+  periodEnd,
+  periodStatus,
+  scheduleRequested,
+  schedulePublished,
+}) {
   if (!periodName) return null;
   const range = formatPeriodRange(periodStart, periodEnd);
   return (
@@ -55,6 +66,9 @@ export function PeriodBanner({ periodName, periodStart, periodEnd, periodStatus,
       {range && <p className="text-sm text-gray-500 mt-0.5">{range}</p>}
       <div className="flex flex-wrap gap-2 mt-2">
         <span className="text-xs px-2 py-1 rounded-full bg-gray-100 text-gray-700 font-bold">{periodStatus}</span>
+        {scheduleRequested && !schedulePublished && (
+          <span className="text-xs px-2 py-1 rounded-full bg-indigo-100 text-indigo-800 font-bold">提案書送付済み</span>
+        )}
         {schedulePublished && (
           <span className="text-xs px-2 py-1 rounded-full bg-blue-100 text-blue-800 font-bold">送付済み</span>
         )}
@@ -105,7 +119,7 @@ export function DayScheduleOverview({
     (teacherSlotLanes ?? []).map((entry) => [entry.slot, entry.lanes ?? []]),
   );
 
-  function LaneCell({ lane, slotStatus }) {
+  function LaneCell({ lane }) {
     if (lane?.blocked) {
       return (
         <div className="w-full rounded-xl border border-gray-200 bg-gray-100 p-2 text-center min-h-[52px] flex flex-col justify-center">
@@ -113,11 +127,20 @@ export function DayScheduleOverview({
         </div>
       );
     }
+    if (lane?.assignment && isRegularAssignment(lane.assignment)) {
+      return (
+        <div className="w-full rounded-xl border border-slate-300 bg-slate-50 p-2 min-h-[52px] flex flex-col items-center justify-center">
+          <span className="text-sm font-bold text-slate-800">通常授業</span>
+          {lane.assignment.student_name && (
+            <span className="text-[10px] text-gray-600 mt-0.5">{lane.assignment.student_name}</span>
+          )}
+        </div>
+      );
+    }
     if (lane?.occupied && lane.lesson_kind === '通常') {
       return (
-        <div className="w-full rounded-xl border border-slate-300 bg-slate-50 p-2 text-center min-h-[52px] flex flex-col justify-center">
-          <span className="text-xs font-bold text-slate-600">通常</span>
-          <span className="text-sm font-bold text-slate-800 mt-0.5">◎ 通常授業</span>
+        <div className="w-full rounded-xl border border-slate-300 bg-slate-50 p-2 min-h-[52px] flex items-center justify-center">
+          <span className="text-sm font-bold text-slate-800">通常授業</span>
         </div>
       );
     }
@@ -129,10 +152,9 @@ export function DayScheduleOverview({
         </div>
       );
     }
-    const badge = slotLabel(slotStatus);
     return (
-      <div className={`w-full rounded-xl border p-2 text-center min-h-[52px] flex flex-col justify-center text-sm font-bold ${badge.cls}`}>
-        {badge.text}
+      <div className="w-full rounded-xl border border-emerald-200 bg-emerald-50 p-2 text-center min-h-[52px] flex flex-col justify-center text-sm font-bold text-emerald-700">
+        空き
       </div>
     );
   }
@@ -141,12 +163,12 @@ export function DayScheduleOverview({
     <div className="space-y-2">
       {rows.map(({ slot, start, end }) => {
         const status = slots[slot] ?? '';
-        const locked = lockedSlots[String(slot)] || status === '◎';
+        const locked = lockedSlots[String(slot)] || (confirmedLesson && (confirmedLesson.is_fixed || confirmedLesson.lesson_kind === '通常'));
         const lesson = lessons.find((l) => l.slot === slot);
         const pending = pendingBySlot[slot];
         const badge = slotLabel(status, role);
         const lanes = lanesBySlot[slot];
-        const useSplit = role === 'teacher' && lanes?.length === 2;
+        const useSplit = role === 'teacher' && lanes?.length >= 2;
 
         if (useSplit) {
           return (
@@ -163,14 +185,14 @@ export function DayScheduleOverview({
                 )}
               </div>
               <div className="flex flex-col gap-2">
-                <div>
-                  <p className="text-[10px] font-bold text-gray-400 mb-1">①</p>
-                  <LaneCell lane={lanes[0]} slotStatus={status} />
+                {lanes.map((lane, laneIdx) => (
+                  <div key={lane.lane ?? laneIdx}>
+                    <p className="text-[10px] font-bold text-gray-400 mb-1">
+                      {['①', '②', '③', '④'][laneIdx] ?? `${laneIdx + 1}`}
+                    </p>
+                    <LaneCell lane={lane} />
                   </div>
-                <div>
-                  <p className="text-[10px] font-bold text-gray-400 mb-1">②</p>
-                  <LaneCell lane={lanes[1]} slotStatus={status} />
-                </div>
+                ))}
               </div>
             </div>
           );
@@ -194,7 +216,7 @@ export function DayScheduleOverview({
                     </span>
                   )}
                 </div>
-                {lesson ? (
+                {lesson && !(lesson.is_fixed || lesson.lesson_kind === '通常') ? (
                   <div className="mt-2">
                     <p className="text-lg font-bold text-blue-900">{lesson.subject}</p>
                     <p className="text-sm text-gray-700 mt-0.5">
@@ -203,12 +225,14 @@ export function DayScheduleOverview({
                         : `${lesson.teacher_name} 先生`}
                     </p>
                   </div>
-                ) : (
+                ) : lesson && (lesson.is_fixed || lesson.lesson_kind === '通常') ? (
+                  <p className="text-lg font-bold text-slate-900 mt-2">通常授業</p>
+                ) : !lesson ? (
                   <p className="text-sm text-gray-400 mt-2">授業割当なし</p>
-                )}
+                ) : null}
               </div>
               <div className={`shrink-0 px-3 py-2 rounded-xl border text-sm font-bold ${badge.cls}`}>
-                {locked && status === '◎' ? '◎ 通常授業' : badge.text}
+                {lesson && (lesson.is_fixed || lesson.lesson_kind === '通常') ? '通常授業' : badge.text}
               </div>
             </div>
           </div>
@@ -230,15 +254,15 @@ export function StudentSlotRow({
   confirmedLesson = null,
   pending = false,
 }) {
-  const lockedSlot = locked || status === '◎';
-  const readOnly = readonly || lockedSlot;
+  const lockedSlot = locked;
+  const showAssignment = Boolean(confirmedLesson) && lockedSlot;
   const badge = studentSlotLabel(status);
   const kindBadge = confirmedLesson ? lessonKindBadge(confirmedLesson.lesson_kind) : null;
 
   return (
     <div className={`rounded-2xl border p-4 transition-all ${
       changed ? 'border-amber-400 bg-amber-50/50 ring-2 ring-amber-200'
-        : confirmedLesson ? 'bg-blue-50/60 border-blue-200'
+        : showAssignment ? 'bg-blue-50/60 border-blue-200'
           : 'border-gray-200 bg-white'
     }`}>
       <div className="flex items-start justify-between gap-3">
@@ -256,27 +280,34 @@ export function StudentSlotRow({
             )}
           </div>
 
-          {readOnly && confirmedLesson && (
+          {showAssignment && (
             <div className="mt-2">
-              <p className="text-lg font-bold text-blue-900">{confirmedLesson.subject}</p>
-              <p className="text-sm text-gray-700 mt-0.5">
-                {confirmedLesson.teacher_name?.includes('先生')
-                  ? confirmedLesson.teacher_name
-                  : `${confirmedLesson.teacher_name} 先生`}
-              </p>
+              {confirmedLesson.lesson_kind === '通常' || confirmedLesson.is_fixed ? (
+                <p className="text-lg font-bold text-slate-900">通常授業</p>
+              ) : (
+                <>
+                  <p className="text-lg font-bold text-blue-900">{confirmedLesson.subject}</p>
+                  <p className="text-sm text-gray-700 mt-0.5">
+                    {confirmedLesson.teacher_name?.includes('先生')
+                      ? confirmedLesson.teacher_name
+                      : `${confirmedLesson.teacher_name} 先生`}
+                  </p>
+                </>
+              )}
             </div>
           )}
         </div>
 
-        {lockedSlot && status === '◎' ? (
-          <div className="shrink-0 px-3 py-2 rounded-xl border text-sm font-bold bg-slate-100 text-slate-700 border-slate-300">
-            ◎ 通常授業
-          </div>
-        ) : readOnly && confirmedLesson && kindBadge ? (
-          <span className={`shrink-0 px-2.5 py-1 rounded-lg border text-xs font-bold ${kindBadge.cls}`}>
-            {kindBadge.text}
+        {showAssignment ? (
+          <span className={`shrink-0 px-2.5 py-1 rounded-lg border text-xs font-bold ${
+            confirmedLesson.lesson_kind === '通常' || confirmedLesson.is_fixed
+              ? 'bg-slate-100 text-slate-800 border-slate-300'
+              : 'bg-blue-50 text-blue-800 border-blue-200'
+          }`}
+          >
+            {confirmedLesson.lesson_kind === '通常' || confirmedLesson.is_fixed ? '通常授業' : '割当済'}
           </span>
-        ) : readOnly ? (
+        ) : readonly ? (
           <div className={`shrink-0 px-3 py-2 rounded-xl border text-sm font-bold ${badge.cls}`}>
             {badge.text}
           </div>
@@ -286,17 +317,17 @@ export function StudentSlotRow({
               type="button"
               disabled={disabled}
               onClick={() => onStatusChange('')}
-              className={`w-16 h-11 rounded-lg font-bold text-sm transition-all disabled:opacity-50 ${
+              className={`w-14 h-11 rounded-lg font-bold text-sm transition-all disabled:opacity-50 ${
                 status === '' ? 'bg-emerald-500 text-white shadow-sm' : 'text-gray-500 hover:bg-gray-200'
               }`}
             >
-              空
+              空き
             </button>
             <button
               type="button"
               disabled={disabled}
               onClick={() => onStatusChange('×')}
-              className={`w-16 h-11 rounded-lg font-bold text-sm transition-all disabled:opacity-50 ${
+              className={`w-14 h-11 rounded-lg font-bold text-sm transition-all disabled:opacity-50 ${
                 status === '×' ? 'bg-red-500 text-white shadow-sm' : 'text-gray-500 hover:bg-gray-200'
               }`}
             >
@@ -318,8 +349,9 @@ export function TimeSlotRow({
   onStatusChange,
   disabled,
   changed,
+  confirmedLesson = null,
 }) {
-  const lockedSlot = locked || status === '◎';
+  const lockedSlot = locked || Boolean(confirmedLesson && (confirmedLesson.is_fixed || confirmedLesson.lesson_kind === '通常'));
   const readOnly = readonly || lockedSlot;
   const badge = slotLabel(status);
 
@@ -336,10 +368,24 @@ export function TimeSlotRow({
           {time?.start && (
             <div className="text-sm text-gray-500 mt-0.5">{time.start}〜{time.end}</div>
           )}
+          {lockedSlot && confirmedLesson && (
+            <p className="text-sm font-bold text-slate-800 mt-1">
+              {confirmedLesson.lesson_kind === '通常' || confirmedLesson.is_fixed
+                ? '通常授業'
+                : `${confirmedLesson.subject}（${confirmedLesson.student_name}）`}
+            </p>
+          )}
         </div>
         {readOnly ? (
-          <div className={`px-4 py-2 rounded-xl border text-sm font-bold ${badge.cls}`}>
-            {lockedSlot && status === '◎' ? '◎ 通常授業' : badge.text}
+          <div className={`px-4 py-2 rounded-xl border text-sm font-bold ${
+            confirmedLesson && (confirmedLesson.is_fixed || confirmedLesson.lesson_kind === '通常')
+              ? 'bg-slate-100 text-slate-800 border-slate-300'
+              : badge.cls
+          }`}
+          >
+            {confirmedLesson && (confirmedLesson.is_fixed || confirmedLesson.lesson_kind === '通常')
+              ? '通常授業'
+              : badge.text}
           </div>
         ) : (
           <div className="flex bg-gray-100 rounded-xl p-1 gap-1">
@@ -373,10 +419,9 @@ export function TimeSlotRow({
 export function StudentScheduleLegend() {
   return (
     <div className="flex flex-wrap justify-center gap-x-4 gap-y-1 mb-4 text-xs text-gray-500">
-      <span><span className="text-slate-600 font-bold">◎</span> 通常授業（変更不可）</span>
-      <span><span className="text-emerald-600 font-bold">空</span> 都合つく</span>
-      <span><span className="text-red-500 font-bold">×</span> 都合つかない</span>
-      <span className="text-gray-400">確定後は左に科目・右に通常/講習</span>
+      <span><span className="text-emerald-600 font-bold">空き</span> 都合がつく</span>
+      <span><span className="text-slate-700 font-bold">通常授業</span> 時間割表で登録済み</span>
+      <span><span className="text-red-500 font-bold">×</span> 都合がつかない</span>
     </div>
   );
 }
@@ -384,9 +429,9 @@ export function StudentScheduleLegend() {
 export function ScheduleLegend() {
   return (
     <div className="flex flex-wrap justify-center gap-x-4 gap-y-1 mb-4 text-xs text-gray-500">
-      <span><span className="text-slate-600 font-bold">◎</span> 通常授業（変更不可）</span>
-      <span><span className="text-emerald-600 font-bold">空</span> 都合つく</span>
-      <span><span className="text-red-500 font-bold">×</span> 都合つかない</span>
+      <span><span className="text-slate-700 font-bold">通常授業</span> 変更不可</span>
+      <span><span className="text-emerald-600 font-bold">空き</span> 都合がつく</span>
+      <span><span className="text-red-500 font-bold">×</span> 都合がつかない</span>
     </div>
   );
 }
@@ -399,7 +444,7 @@ export function collectProposalChanges(originalByDate, proposalByDate, lockedByD
     const proposal = proposalByDate[date] ?? EMPTY_SLOTS;
     const locked = lockedByDate[date] ?? {};
     SLOT_NUMS.forEach((slot) => {
-      if (locked[String(slot)] || original[slot] === '◎') return;
+      if (locked[String(slot)]) return;
       if (original[slot] !== proposal[slot]) {
         changes.push({ date, slot, from: original[slot] ?? '', to: proposal[slot] ?? '' });
       }

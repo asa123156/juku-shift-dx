@@ -99,6 +99,34 @@ def test_teacher_four_consecutive_limit() -> None:
     assert any(c["teacher_id"] == 1 and c["slot"] == 5 for c in result)
 
 
+def test_weekly_limit_absorbs_arithmetic_into_math() -> None:
+    teachers = [_teacher(1, "田中", {1: "待機", 2: "待機", 3: "待機", 4: "待機"})]
+    pool = [
+        {"date": DATE, "student_id": 1, "subject": "算数", "teacher_id": 1, "slot": 1},
+        {"date": DATE2, "student_id": 1, "subject": "数学", "teacher_id": 1, "slot": 1},
+    ]
+    rules = MatchRules(weekly_limits={"数学": 2})
+    result = get_assignment_candidates(
+        1, "算数", teachers, pool, DATE3, rules=rules, all_assignments=pool,
+        student_slots=_student_slots(),
+    )
+    assert result == []
+
+
+def test_weekly_limit_absorbs_physics_chemistry_into_science() -> None:
+    teachers = [_teacher(1, "田中", {1: "待機", 2: "待機", 3: "待機", 4: "待機"})]
+    pool = [
+        {"date": DATE, "student_id": 1, "subject": "物理", "teacher_id": 1, "slot": 1},
+        {"date": DATE2, "student_id": 1, "subject": "化学", "teacher_id": 1, "slot": 1},
+    ]
+    rules = MatchRules(weekly_limits={"理科": 2})
+    result = get_assignment_candidates(
+        1, "理科", teachers, pool, DATE3, rules=rules, all_assignments=pool,
+        student_slots=_student_slots(),
+    )
+    assert result == []
+
+
 def test_no_weekly_limit_when_zero() -> None:
     teachers = [_teacher(1, "田中", {1: "待機", 2: "待機", 3: "待機", 4: "待機"})]
     pool = [
@@ -143,6 +171,8 @@ def run_tests() -> None:
     test_no_teacher_gap_rule()
     test_student_three_consecutive_limit()
     test_teacher_four_consecutive_limit()
+    test_weekly_limit_absorbs_arithmetic_into_math()
+    test_weekly_limit_absorbs_physics_chemistry_into_science()
     test_no_weekly_limit_when_zero()
     print("Assignment engine tests passed.")
 

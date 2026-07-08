@@ -21,6 +21,13 @@ class DashboardMetrics(BaseModel):
     unsubmitted_teachers: int = Field(ge=0, description="未提出の講師数")
 
 
+class DashboardCellEntry(BaseModel):
+    kind: Literal["regular", "lesson", "blocked"] = "lesson"
+    subject: str = ""
+    student_name: str = ""
+    student_id: int | None = None
+
+
 class TeacherShiftRow(BaseModel):
     id: int
     name: str
@@ -31,6 +38,14 @@ class TeacherShiftRow(BaseModel):
     s4: ShiftStatus = ""
     s5: ShiftStatus = ""
     s6: ShiftStatus = ""
+    slot_assignments: dict[str, list[DashboardCellEntry]] = Field(
+        default_factory=dict,
+        description="コマごとの割当表示（時間割表と同期）",
+    )
+    slot_lesson_formats: dict[str, str] = Field(
+        default_factory=dict,
+        description="コマごとの授業形態（1対2 / 1対4）",
+    )
 
 
 class ShiftDashboardResponse(BaseModel):
@@ -39,6 +54,8 @@ class ShiftDashboardResponse(BaseModel):
     metrics: DashboardMetrics
     time_slots: list[TimeSlotInfo]
     teachers: list[TeacherShiftRow]
+    period_status: str | None = None
+    finalized: bool = False
 
 
 class TeacherShiftSubmissionResponse(BaseModel):

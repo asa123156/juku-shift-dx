@@ -10,6 +10,7 @@ from services.period_store import get_period, open_dates_for_period
 from services.slot_timing import SLOT_FIELDS, generate_time_slots
 
 WEEKDAY_JA = ["月", "火", "水", "木", "金", "土", "日"]
+PLACEHOLDER_TEACHER_NAME = "講師（未登録）"
 
 
 def _default_teacher_row(meta: dict) -> dict:
@@ -25,8 +26,6 @@ def bootstrap_period_dashboards(period_id: int) -> int:
     open_dates = open_dates_for_period(period)
     time_slots = generate_time_slots()
     teachers = [_default_teacher_row(t) for t in list_teachers()]
-    if not teachers:
-        teachers = [_default_teacher_row({"id": 1, "name": "講師（未登録）", "color": "bg-gray-100 text-gray-600"})]
 
     for iso_date in open_dates:
         d = date.fromisoformat(iso_date)
@@ -40,6 +39,31 @@ def bootstrap_period_dashboards(period_id: int) -> int:
             }
         )
     return len(open_dates)
+
+
+def _dashboard_shell(iso_date: str) -> dict:
+    d = date.fromisoformat(iso_date)
+    display = f"{d.year}年 {d.month}月{d.day}日 ({WEEKDAY_JA[d.weekday()]}) の状況"
+    return {
+        "date": iso_date,
+        "display_date": display,
+        "time_slots": generate_time_slots(),
+        "teachers": [],
+    }
+
+
+def _merge_teacher_row(existing: dict, meta: dict) -> dict:
+    """ダッシュボード行の名前・色を更新し、提出済みコマは維持する。"""
+    row = _default_teacher_row(meta)
+    for field in SLOT_FIELDS:
+        prev = existing.get(field)
+        if prev not in (None, "", "待機", "未提出"):
+            row[field] = prev
+    return row
+
+
+def _strip_placeholder_teachers(teachers: list[dict]) -> list[dict]:
+    return [t for t in teachers if t.get("name") != PLACEHOLDER_TEACHER_NAME]
 
 
 def add_teachers_to_period_dashboards(period_id: int, teacher_ids: list[int]) -> int:
@@ -57,15 +81,26 @@ def add_teachers_to_period_dashboards(period_id: int, teacher_ids: list[int]) ->
         try:
             dash = load_shift_dashboard_base(iso_date)
         except HTTPException:
-            continue
-        existing_ids = {t["id"] for t in dash.get("teachers", [])}
+            dash = _dashboard_shell(iso_date)
         teachers = list(dash.get("teachers", []))
+        existing_ids = {t["id"] for t in teachers}
         changed = False
         for tid in teacher_ids:
-            if tid in existing_ids:
-                continue
             meta = teachers_meta.get(tid)
             if meta is None:
+                continue
+            if tid in existing_ids:
+                for idx, row in enumerate(teachers):
+                    if row.get("id") != tid:
+                        continue
+                    merged = _merge_teacher_row(row, meta)
+                    if merged != row:
+                        teachers[idx] = merged
+                        changed = True
+                continue
+            teachers = _strip_placeholder_teachers(teachers)
+            existing_ids = {t["id"] for t in teachers}
+            if tid in existing_ids:
                 continue
             teachers.append(_default_teacher_row(meta))
             added_rows += 1
@@ -73,3 +108,14 @@ def add_teachers_to_period_dashboards(period_id: int, teacher_ids: list[int]) ->
         if changed:
             upsert_shift_dashboard({**dash, "teachers": teachers})
     return added_rows
+
+
+def sync_teacher_to_all_period_dashboards(teacher_id: int) -> int:
+    """全講習期間の開校日ダッシュボードに講師を反映する（時間割表の列に出す）。"""
+    from services.period_store import list_periods
+
+    periods, _ = list_periods()
+    total = 0
+    for period in periods:
+        total += add_teachers_to_period_dashboards(period.id, [teacher_id])
+    return total

@@ -15,6 +15,7 @@ from models import (
     AdminOverride,
     Assignment,
     AssignmentRequest,
+    ClassSchedule,
     PeriodBaseSlot,
     PeriodScheduleWorkbook,
     ShiftChangeRequest,
@@ -23,6 +24,7 @@ from models import (
     StudentScheduleRequestPublish,
     StudentSubjectPlan,
     TeacherSchedulePublish,
+    TeacherScheduleRequestPublish,
 )
 from services.admin_store import reset_admin_overrides_for_tests
 from services.assignment_store import reset_assignments_for_tests
@@ -49,24 +51,27 @@ def clear_schedule_db() -> dict[str, int]:
 
     counts: dict[str, int] = {}
     with SessionLocal() as db:
+        counts["legacy_assignments"] = db.query(Assignment).delete()
+        counts["class_schedules"] = db.query(ClassSchedule).delete()
         for label, model in (
             ("period_base_slots", PeriodBaseSlot),
             ("student_plans", StudentSubjectPlan),
             ("student_request_publishes", StudentScheduleRequestPublish),
             ("student_publishes", StudentSchedulePublish),
             ("teacher_publishes", TeacherSchedulePublish),
+            ("teacher_request_publishes", TeacherScheduleRequestPublish),
             ("change_requests", ShiftChangeRequest),
             ("workbooks", PeriodScheduleWorkbook),
         ):
             counts[label] = db.query(model).delete()
         db.commit()
 
-    # reset_* は delete 件数を返さないので再確認用
     with SessionLocal() as db:
         counts["shift_submissions"] = db.query(ShiftSubmission).count()
-        counts["assignments"] = db.query(Assignment).count()
+        counts["class_schedules_left"] = db.query(ClassSchedule).count()
         counts["assignment_requests"] = db.query(AssignmentRequest).count()
         counts["admin_overrides"] = db.query(AdminOverride).count()
+        counts["legacy_assignments_left"] = db.query(Assignment).count()
 
     return counts
 
@@ -76,7 +81,7 @@ def main() -> None:
     counts = clear_schedule_db()
     print("スケジュールを空にしました（期間・生徒・講師マスタはそのまま）。")
     print(f"  DB 残件: submissions={counts['shift_submissions']}, "
-          f"assignments={counts['assignments']}, requests={counts['assignment_requests']}")
+          f"class_schedules={counts['class_schedules_left']}, requests={counts['assignment_requests']}")
     print(f"  削除: period_base={counts['period_base_slots']}, "
           f"publishes={counts['student_publishes']}+{counts['teacher_publishes']}, "
           f"workbooks={counts['workbooks']}")

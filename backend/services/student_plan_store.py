@@ -1,34 +1,40 @@
-"""講習期間ごとの生徒希望（教科・コマ数）と割当リクエスト同期。"""
+"""講習期間ごとの生徒希望（教科・コマ数・担当講師）と割当リクエスト同期。"""
 
 from __future__ import annotations
-
-from datetime import date
 
 from fastapi import HTTPException
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from database import SessionLocal
-from models import AssignmentRequest as AssignmentRequestRow
 from models import StudentSubjectPlan
-from services.assignment_store import append_assignment_requests
-from services.entity_store import get_student
-from services.period_store import get_period, open_dates_for_period
+from services.assignment_store import get_assignments_between
+from services.entity_store import get_student, list_teachers
+from services.period_store import get_period
 
 
 def _session() -> Session:
     return SessionLocal()
 
 
-def _plan_to_dict(row: StudentSubjectPlan) -> dict:
+def _teacher_name_map() -> dict[int, str]:
+    return {t["id"]: t["name"] for t in list_teachers()}
+
+
+def _plan_to_dict(row: StudentSubjectPlan, teacher_names: dict[int, str] | None = None) -> dict:
+    names = teacher_names if teacher_names is not None else _teacher_name_map()
+    teacher_id = row.teacher_id
     return {
         "subject": row.subject,
         "slot_count": int(row.slot_count),
+        "teacher_id": teacher_id,
+        "teacher_name": names.get(teacher_id, "") if teacher_id else None,
     }
 
 
 def list_plans_for_period(period_id: int) -> dict[int, list[dict]]:
-    """student_id -> [{subject, slot_count}, ...]"""
+    """student_id -> [{subject, slot_count, teacher_id, teacher_name}, ...]"""
+    teacher_names = _teacher_name_map()
     with _session() as db:
         rows = db.scalars(
             select(StudentSubjectPlan)
@@ -37,7 +43,7 @@ def list_plans_for_period(period_id: int) -> dict[int, list[dict]]:
         ).all()
     result: dict[int, list[dict]] = {}
     for row in rows:
-        result.setdefault(row.student_id, []).append(_plan_to_dict(row))
+        result.setdefault(row.student_id, []).append(_plan_to_dict(row, teacher_names))
     return result
 
 
@@ -51,7 +57,29 @@ def list_plans_for_student(period_id: int, student_id: int) -> list[dict]:
             )
             .order_by(StudentSubjectPlan.subject)
         ).all()
-    return [_plan_to_dict(row) for row in rows]
+    teacher_names = _teacher_name_map()
+    return [_plan_to_dict(row, teacher_names) for row in rows]
+
+
+def get_preferred_teacher_id(period_id: int, student_id: int, subject: str) -> int | None:
+    for plan in list_plans_for_student(period_id, student_id):
+        if plan["subject"] == subject and plan.get("teacher_id"):
+            return int(plan["teacher_id"])
+    return None
+
+
+def _parse_teacher_id(raw: object) -> int | None:
+    if raw is None or raw == "":
+        return None
+    try:
+        teacher_id = int(raw)
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail="担当講師の指定が不正です") from exc
+    if teacher_id < 1:
+        return None
+    if teacher_id not in _teacher_name_map():
+        raise HTTPException(status_code=404, detail=f"講師 id={teacher_id} が見つかりません")
+    return teacher_id
 
 
 def save_student_plans(period_id: int, student_id: int, plans: list[dict]) -> list[dict]:
@@ -60,7 +88,7 @@ def save_student_plans(period_id: int, student_id: int, plans: list[dict]) -> li
         raise HTTPException(status_code=409, detail="確定済みの講習期間は希望を変更できません")
     get_student(student_id)
 
-    cleaned: list[tuple[str, int]] = []
+    cleaned: list[tuple[str, int, int | None]] = []
     seen: set[str] = set()
     for item in plans:
         subject = str(item.get("subject", "")).strip()
@@ -75,8 +103,9 @@ def save_student_plans(period_id: int, student_id: int, plans: list[dict]) -> li
             raise HTTPException(status_code=400, detail="コマ数は整数で指定してください") from exc
         if count < 0:
             raise HTTPException(status_code=400, detail="コマ数は0以上にしてください")
+        teacher_id = _parse_teacher_id(item.get("teacher_id"))
         if count > 0:
-            cleaned.append((subject, count))
+            cleaned.append((subject, count, teacher_id))
 
     with _session() as db:
         db.execute(
@@ -85,13 +114,14 @@ def save_student_plans(period_id: int, student_id: int, plans: list[dict]) -> li
                 StudentSubjectPlan.student_id == student_id,
             )
         )
-        for subject, slot_count in cleaned:
+        for subject, slot_count, teacher_id in cleaned:
             db.add(
                 StudentSubjectPlan(
                     period_id=period_id,
                     student_id=student_id,
                     subject=subject,
                     slot_count=slot_count,
+                    teacher_id=teacher_id,
                 )
             )
         db.commit()
@@ -100,75 +130,14 @@ def save_student_plans(period_id: int, student_id: int, plans: list[dict]) -> li
     return list_plans_for_student(period_id, student_id), synced
 
 
-def _build_requests_by_date(
-    open_dates: list[str],
-    student_id: int,
-    student_name: str,
-    plans: list[dict],
-) -> dict[str, list[dict]]:
-    """希望コマ数を開校日に分散（1日1教科1件まで）。"""
-    if not open_dates or not plans:
-        return {d: [] for d in open_dates}
-
-    by_date: dict[str, list[dict]] = {d: [] for d in open_dates}
-    n = len(open_dates)
-    day_ptr = 0
-
-    for plan in plans:
-        subject = plan["subject"]
-        need = int(plan["slot_count"])
-        placed = 0
-        attempts = 0
-        max_attempts = n * max(need, 1) + n
-        while placed < need and attempts < max_attempts:
-            iso = open_dates[day_ptr % n]
-            day_ptr += 1
-            attempts += 1
-            if any(r["subject"] == subject for r in by_date[iso]):
-                continue
-            by_date[iso].append(
-                {
-                    "student_id": student_id,
-                    "student_name": student_name,
-                    "subject": subject,
-                }
-            )
-            placed += 1
-
-    return by_date
-
-
 def sync_student_assignment_requests(period_id: int, student_id: int) -> int:
-    """生徒の希望から assignment_requests を再生成。戻り値: 作成件数。"""
+    """希望と割当の差分から未割当件数を返す（日付への事前分散は行わない）。"""
+    from services.schedule_canonical import compute_student_pending_count
+
     period = get_period(period_id)
-    open_dates = open_dates_for_period(period)
-    if not open_dates:
-        return 0
-
-    student = get_student(student_id)
     plans = list_plans_for_student(period_id, student_id)
-    by_date = _build_requests_by_date(open_dates, student_id, student["name"], plans)
-
-    start_d = date.fromisoformat(open_dates[0])
-    end_d = date.fromisoformat(open_dates[-1])
-    with _session() as db:
-        db.execute(
-            delete(AssignmentRequestRow).where(
-                AssignmentRequestRow.student_id == student_id,
-                AssignmentRequestRow.slot_date >= start_d,
-                AssignmentRequestRow.slot_date <= end_d,
-            )
-        )
-        db.commit()
-
-    total = 0
-    for iso in open_dates:
-        reqs = by_date.get(iso, [])
-        if not reqs:
-            continue
-        added, _ = append_assignment_requests(iso, reqs)
-        total += added
-    return total
+    assignments = get_assignments_between(period.start_date, period.end_date)
+    return compute_student_pending_count(student_id, plans, assignments)
 
 
 def delete_plans_for_student(period_id: int, student_id: int) -> None:

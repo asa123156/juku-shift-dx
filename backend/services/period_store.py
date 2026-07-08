@@ -40,6 +40,9 @@ def _to_schema(row: PeriodRow) -> Period:
         end_date=row.end_date.isoformat(),
         status=row.status,
         closed_dates=sorted(closed),
+        is_deleted=bool(row.is_deleted),
+        location_slug=getattr(row, "location_slug", None) or "hakutei",
+        period_kind=getattr(row, "period_kind", None) or "CRAM",
     )
 
 
@@ -59,6 +62,12 @@ def _set_active_period_id(db: Session, period_id: int) -> None:
         db.add(AppSetting(key=ACTIVE_PERIOD_KEY, value=str(period_id)))
     else:
         row.value = str(period_id)
+
+
+def _clear_active_period_id(db: Session) -> None:
+    row = db.get(AppSetting, ACTIVE_PERIOD_KEY)
+    if row is not None:
+        db.delete(row)
 
 
 def iter_dates(start: str, end: str) -> list[str]:
@@ -87,29 +96,73 @@ def open_dates_for_period(period: Period) -> list[str]:
 
 def list_periods() -> tuple[list[Period], int | None]:
     with _session() as db:
-        rows = db.scalars(select(PeriodRow).order_by(PeriodRow.id)).all()
-        return [_to_schema(row) for row in rows], _get_active_period_id(db)
+        rows = db.scalars(
+            select(PeriodRow).where(PeriodRow.is_deleted == 0).order_by(PeriodRow.id)
+        ).all()
+        active_id = _get_active_period_id(db)
+        if active_id is not None and not any(int(r.id) == int(active_id) for r in rows):
+            _clear_active_period_id(db)
+            db.commit()
+            active_id = None
+        return [_to_schema(row) for row in rows], active_id
+
+
+def list_deleted_periods() -> list[Period]:
+    with _session() as db:
+        rows = db.scalars(
+            select(PeriodRow).where(PeriodRow.is_deleted == 1).order_by(PeriodRow.id)
+        ).all()
+    return [_to_schema(row) for row in rows]
 
 
 def get_period(period_id: int) -> Period:
     with _session() as db:
         row = db.get(PeriodRow, period_id)
-        if row is None:
+        if row is None or row.is_deleted:
             raise HTTPException(status_code=404, detail=f"Period id={period_id} not found")
         return _to_schema(row)
 
 
-def find_period_for_date(iso_date: str) -> Period | None:
+def find_cram_period_for_date(iso_date: str) -> Period | None:
+    """指定日を含む講習 Period（CRAM）を返す。"""
     target = date.fromisoformat(iso_date)
     with _session() as db:
-        rows = db.scalars(select(PeriodRow)).all()
-        for row in rows:
-            if row.start_date <= target <= row.end_date:
-                return _to_schema(row)
+        row = db.scalars(
+            select(PeriodRow).where(
+                PeriodRow.is_deleted == 0,
+                PeriodRow.period_kind == "CRAM",
+                PeriodRow.start_date <= target,
+                PeriodRow.end_date >= target,
+            ).order_by(PeriodRow.start_date)
+        ).first()
+    if row is None:
+        return None
+    return _to_schema(row)
+
+
+def find_period_for_date(iso_date: str) -> Period | None:
+    """講習期間があれば CRAM を優先。なければ年度 REGULAR。"""
+    cram = find_cram_period_for_date(iso_date)
+    if cram is not None:
+        return cram
+    from services.fiscal_year_store import find_regular_period_for_date
+
+    regular = find_regular_period_for_date(iso_date)
+    if regular is not None:
+        return regular
     return None
 
 
-def create_period(name: str, start_date: str, end_date: str, closed_dates: list[str] | None = None) -> Period:
+def create_period(
+    name: str,
+    start_date: str,
+    end_date: str,
+    closed_dates: list[str] | None = None,
+    location_slug: str = "hakutei",
+) -> Period:
+    from services.location_config import resolve_location_slug
+
+    resolve_location_slug(location_slug)
     start_d = date.fromisoformat(start_date)
     end_d = date.fromisoformat(end_date)
     closed = sorted(set(closed_dates or []))
@@ -127,6 +180,9 @@ def create_period(name: str, start_date: str, end_date: str, closed_dates: list[
             end_date=end_d,
             status="DRAFT",
             closed_dates=closed,
+            is_deleted=0,
+            location_slug=location_slug,
+            period_kind="CRAM",
         )
         db.add(row)
         db.flush()
@@ -140,7 +196,7 @@ def create_period(name: str, start_date: str, end_date: str, closed_dates: list[
 def set_active_period(period_id: int) -> Period:
     with _session() as db:
         row = db.get(PeriodRow, period_id)
-        if row is None:
+        if row is None or row.is_deleted:
             raise HTTPException(status_code=404, detail=f"Period id={period_id} not found")
         _set_active_period_id(db, period_id)
         db.commit()
@@ -150,9 +206,46 @@ def set_active_period(period_id: int) -> Period:
 def update_period_status(period_id: int, status: PeriodStatus) -> Period:
     with _session() as db:
         row = db.get(PeriodRow, period_id)
-        if row is None:
+        if row is None or row.is_deleted:
             raise HTTPException(status_code=404, detail=f"Period id={period_id} not found")
         row.status = status
+        db.commit()
+        db.refresh(row)
+        return _to_schema(row)
+
+
+def delete_period(period_id: int) -> Period:
+    with _session() as db:
+        row = db.get(PeriodRow, period_id)
+        if row is None:
+            raise HTTPException(status_code=404, detail=f"Period id={period_id} not found")
+        if row.is_deleted:
+            raise HTTPException(status_code=409, detail=f"Period id={period_id} is already deleted")
+        row.is_deleted = 1
+        active_id = _get_active_period_id(db)
+        if active_id == period_id:
+            fallback = db.scalars(
+                select(PeriodRow.id).where(PeriodRow.is_deleted == 0, PeriodRow.id != period_id).order_by(PeriodRow.id)
+            ).first()
+            if fallback is None:
+                _clear_active_period_id(db)
+            else:
+                _set_active_period_id(db, int(fallback))
+        db.commit()
+        db.refresh(row)
+        return _to_schema(row)
+
+
+def restore_period(period_id: int) -> Period:
+    with _session() as db:
+        row = db.get(PeriodRow, period_id)
+        if row is None:
+            raise HTTPException(status_code=404, detail=f"Period id={period_id} not found")
+        if not row.is_deleted:
+            raise HTTPException(status_code=409, detail=f"Period id={period_id} is not deleted")
+        row.is_deleted = 0
+        if _get_active_period_id(db) is None:
+            _set_active_period_id(db, period_id)
         db.commit()
         db.refresh(row)
         return _to_schema(row)
@@ -174,6 +267,7 @@ def seed_periods_if_empty() -> None:
                 start_date=date.fromisoformat(raw["start_date"]),
                 end_date=date.fromisoformat(raw["end_date"]),
                 status=raw["status"],
+                is_deleted=1 if raw.get("is_deleted") else 0,
             )
             db.add(row)
             db.flush()
@@ -193,6 +287,9 @@ def _import_bases_from_json(db: Session, raw: dict) -> None:
             continue
         period_id = int(json_key)
         if db.get(PeriodRow, period_id) is None:
+            continue
+        period = db.get(PeriodRow, period_id)
+        if period is not None and period.is_deleted:
             continue
         for role_key, entities in period_data.items():
             role = role_map.get(role_key)
@@ -259,7 +356,8 @@ def set_period_base_slot(
     symbol: str,
 ) -> None:
     with _session() as db:
-        if db.get(PeriodRow, period_id) is None:
+        period_row = db.get(PeriodRow, period_id)
+        if period_row is None or period_row.is_deleted:
             raise HTTPException(status_code=404, detail=f"Period id={period_id} not found")
         target_date = date.fromisoformat(iso_date)
         existing = db.scalars(
@@ -300,6 +398,6 @@ def get_entity_base_day(period_id: int, role: str, entity_id: int, iso_date: str
         ).all()
     result = empty_slots()
     for row in rows:
-        if row.slot_key in result:
+        if row.slot_key in result and row.symbol != "◎":
             result[row.slot_key] = row.symbol
     return result

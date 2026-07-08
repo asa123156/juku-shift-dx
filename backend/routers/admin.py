@@ -22,11 +22,14 @@ from schemas.assignment import (
     ImportAssignmentRequestsResponse,
     ManualAssignRequest,
     MatchRulesRequest,
+    SlotCapacityUpdateRequest,
     PublishScheduleRequest,
     PublishScheduleRequestOnlyRequest,
     PublishScheduleRequestOnlyResponse,
     PublishScheduleResponse,
     PublishTeacherScheduleRequest,
+    PublishTeacherScheduleRequestOnlyRequest,
+    PublishTeacherScheduleRequestOnlyResponse,
     PublishTeacherScheduleResponse,
 )
 from schemas.change_request import (
@@ -69,7 +72,7 @@ from services.assignment_engine import (
     rank_candidates,
     teachers_from_dashboard,
 )
-from services.assignment_grid import build_assignment_grid, manual_assign
+from services.assignment_grid import build_assignment_grid, manual_assign, update_slot_capacity
 from services.assignment_sheets import build_assignment_sheets
 from services.assignment_store import cancel_assignment_at_slot, get_assignments_between, get_assignments_for_date
 from services.auto_assign import run_auto_assign
@@ -81,25 +84,59 @@ from services.data_loader import resolve_shift_date
 from services.period_bootstrap import bootstrap_period_dashboards
 from services.period_store import (
     create_period,
+    delete_period,
+    find_period_for_date,
     get_period,
     iter_dates,
     open_dates_for_period,
+    list_deleted_periods,
     list_periods,
+    restore_period,
     set_active_period,
     update_period_status,
 )
+from services.student_plan_store import get_preferred_teacher_id
 from services.shift_excel import import_shift_excel_csv, import_shift_excel_xlsx, export_shift_excel_xlsx
 from services.schedule_publish_store import (
+    is_schedule_request_published,
     publish_all_schedules,
     publish_student_schedule_request,
     publish_student_schedule,
     publish_teacher_schedule,
+    publish_teacher_schedule_request,
 )
 from services.change_request_store import count_pending_requests, list_change_requests, resolve_change_request
 from services.shift_store import ensure_teacher_exists
 from services.entity_store import get_student
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
+
+
+@router.get("/dashboard/summary")
+def get_dashboard_summary(period_id: int = Query(..., ge=1)) -> dict:
+    """提案書送付・割当・未提出・変更申請の概要。"""
+    from services.admin_dashboard import build_admin_dashboard_summary
+
+    get_period(period_id)
+    return build_admin_dashboard_summary(period_id)
+
+
+@router.get("/schedule/full")
+def get_schedule_full(period_id: int = Query(..., ge=1)) -> dict:
+    """時間割正本（通常＋講習）。"""
+    from services.class_schedule_store import get_full_schedule
+
+    get_period(period_id)
+    return get_full_schedule(period_id)
+
+
+@router.get("/schedule/fixed")
+def get_schedule_fixed_only(period_id: int = Query(..., ge=1)) -> dict:
+    """通常授業（is_fixed=True）のみ。"""
+    from services.class_schedule_store import get_fixed_only_schedule
+
+    get_period(period_id)
+    return get_fixed_only_schedule(period_id)
 
 
 @router.get("/assignments/grid", response_model=AssignmentGridResponse)
@@ -119,7 +156,31 @@ def get_assignment_sheets(period_id: int = Query(..., ge=1)) -> AssignmentSheets
 @router.post("/assignments/manual", response_model=AssignmentGridResponse)
 def assign_manual(body: ManualAssignRequest) -> AssignmentGridResponse:
     """手動で生徒を講師コマに割り当てる"""
+    from services.entity_store import find_students_by_name, get_student
+
     resolve_shift_date(body.date)
+    if body.student_id is not None:
+        student = get_student(body.student_id)
+        student_id = student["id"]
+        student_name = student["name"]
+    else:
+        matches = find_students_by_name(body.student_name)
+        if not matches:
+            raise HTTPException(
+                status_code=404,
+                detail=f"生徒「{body.student_name}」が見つかりません。教室管理で登録してください",
+            )
+        if len(matches) > 1:
+            raise HTTPException(
+                status_code=400,
+                detail=f"生徒「{body.student_name}」が同名で複数登録されています。教室管理で確認してください",
+            )
+        student_id = matches[0]["id"]
+        student_name = matches[0]["name"]
+
+    if not body.is_fixed and not body.subject.strip():
+        raise HTTPException(status_code=400, detail="講習枠では科目を入力してください")
+
     rules = MatchRules.from_dict(body.rules.model_dump() if body.rules else None)
     all_assignments = None
     if body.period_id is not None:
@@ -127,14 +188,25 @@ def assign_manual(body: ManualAssignRequest) -> AssignmentGridResponse:
         all_assignments = get_assignments_between(period.start_date, period.end_date)
     grid = manual_assign(
         body.date,
-        body.student_id,
-        body.student_name,
+        student_id,
+        student_name,
         body.subject,
         body.teacher_id,
         body.slot,
         rules=rules,
         all_assignments=all_assignments,
+        skip_rules=body.skip_rules,
+        is_fixed=body.is_fixed,
+        period_id=body.period_id,
     )
+    return AssignmentGridResponse.model_validate(grid)
+
+
+@router.patch("/assignments/grid/capacity", response_model=AssignmentGridResponse)
+def patch_grid_slot_capacity(body: SlotCapacityUpdateRequest) -> AssignmentGridResponse:
+    """時間割セルの授業形態（1対2 / 1対4）を設定する"""
+    resolve_shift_date(body.date)
+    grid = update_slot_capacity(body.date, body.teacher_id, body.slot, body.max_lanes)
     return AssignmentGridResponse.model_validate(grid)
 
 
@@ -159,7 +231,14 @@ def cancel_assignment(body: CancelAssignmentRequest) -> CancelAssignmentResponse
 @router.post("/assignments/publish-schedule", response_model=PublishScheduleResponse)
 def publish_schedule_to_student(body: PublishScheduleRequest) -> PublishScheduleResponse:
     """生徒の割当を確定し、生徒画面にスケジュールを送信する。"""
-    get_period(body.period_id)
+    period = get_period(body.period_id)
+    if period.status == "DRAFT":
+        raise HTTPException(status_code=409, detail="DRAFT 期間では確定送信できません")
+    if not is_schedule_request_published(body.period_id, body.student_id):
+        raise HTTPException(
+            status_code=409,
+            detail="提案書が未送付です。先に「提案書を送付（回答依頼）」を行ってください",
+        )
     student = get_student(body.student_id)
     sheets = build_assignment_sheets(body.period_id)
     student_row = next((s for s in sheets["students"] if s["id"] == body.student_id), None)
@@ -186,6 +265,8 @@ def publish_schedule_to_student(body: PublishScheduleRequest) -> PublishSchedule
 def publish_request_to_student(body: PublishScheduleRequestOnlyRequest) -> PublishScheduleRequestOnlyResponse:
     """生徒に初回提案書（回答依頼）を送付する。"""
     period = get_period(body.period_id)
+    if period.status == "DRAFT":
+        period = update_period_status(body.period_id, "COLLECTING")
     if period.status != "COLLECTING":
         raise HTTPException(status_code=409, detail="初回提案書の送付は COLLECTING 期間のみ可能です")
     student = get_student(body.student_id)
@@ -202,6 +283,33 @@ def publish_request_to_student(body: PublishScheduleRequestOnlyRequest) -> Publi
     )
 
 
+@router.post("/assignments/publish-teacher-request", response_model=PublishTeacherScheduleRequestOnlyResponse)
+def publish_request_to_teacher(
+    body: PublishTeacherScheduleRequestOnlyRequest,
+) -> PublishTeacherScheduleRequestOnlyResponse:
+    """講師に初回提案書（回答依頼）を送付する。"""
+    period = get_period(body.period_id)
+    if period.status == "DRAFT":
+        period = update_period_status(body.period_id, "COLLECTING")
+    if period.status != "COLLECTING":
+        raise HTTPException(status_code=409, detail="初回提案書の送付は COLLECTING 期間のみ可能です")
+    sheets = build_assignment_sheets(body.period_id)
+    teacher_row = next((t for t in sheets["teachers"] if t["id"] == body.teacher_id), None)
+    if teacher_row is None:
+        raise HTTPException(status_code=404, detail="講師が見つかりません")
+    already = not publish_teacher_schedule_request(body.period_id, body.teacher_id)
+    sheets = build_assignment_sheets(body.period_id)
+    if already:
+        msg = f"「{teacher_row['name']}」には既に提案書を送付済みです"
+    else:
+        msg = f"「{teacher_row['name']}」に提案書を送付しました。講師画面で回答できます。"
+    return PublishTeacherScheduleRequestOnlyResponse(
+        message=msg,
+        already_published=already,
+        sheets=AssignmentSheetsResponse.model_validate(sheets),
+    )
+
+
 @router.post("/assignments/publish-teacher-schedule", response_model=PublishTeacherScheduleResponse)
 def publish_schedule_to_teacher(body: PublishTeacherScheduleRequest) -> PublishTeacherScheduleResponse:
     """講師に確定スケジュールを送付する。"""
@@ -210,6 +318,11 @@ def publish_schedule_to_teacher(body: PublishTeacherScheduleRequest) -> PublishT
     teacher_row = next((t for t in sheets["teachers"] if t["id"] == body.teacher_id), None)
     if teacher_row is None:
         raise HTTPException(status_code=404, detail="講師が見つかりません")
+    if not teacher_row.get("schedule_requested"):
+        raise HTTPException(
+            status_code=409,
+            detail="提案書を送付してから確定してください",
+        )
     already = not publish_teacher_schedule(body.period_id, body.teacher_id)
     sheets = build_assignment_sheets(body.period_id)
     if already:
@@ -264,9 +377,17 @@ def resolve_change_request_endpoint(
 ) -> ChangeRequestResolveResponse:
     row = resolve_change_request(request_id, body.action)
     action_label = "承認" if body.action == "approve" else "却下"
+    if body.action == "approve" and row.get("request_type") == "RESUBMIT":
+        if row.get("role") == "student":
+            detail = "割当を白紙に戻し、再提出を依頼しました"
+        else:
+            detail = "提出をリセットし、再提出を依頼しました"
+        msg = f"変更申請を承認しました（{detail}）"
+    else:
+        msg = f"変更申請を{action_label}しました"
     return ChangeRequestResolveResponse(
         request=ChangeRequestItem.model_validate(row),
-        message=f"変更申請を{action_label}しました",
+        message=msg,
     )
 
 
@@ -299,6 +420,12 @@ def list_assignment_candidates(body: AssignmentCandidatesRequest) -> AssignmentC
     dashboard = build_availability_dashboard(body.date)
     teacher_list = teachers_from_dashboard(dashboard)
     current_assignments = get_assignments_for_date(body.date)
+    period = find_period_for_date(body.date)
+    preferred = (
+        get_preferred_teacher_id(period.id, body.student_id, body.subject)
+        if period is not None
+        else None
+    )
 
     raw = get_assignment_candidates(
         student_id=body.student_id,
@@ -306,6 +433,7 @@ def list_assignment_candidates(body: AssignmentCandidatesRequest) -> AssignmentC
         teacher_list=teacher_list,
         current_assignments=current_assignments,
         date=body.date,
+        preferred_teacher_id=preferred,
     )
     from services.assignment_engine import load_student_slots
 
@@ -390,6 +518,12 @@ async def import_assignment_requests(
 def get_periods() -> PeriodListResponse:
     periods, active_id = list_periods()
     return PeriodListResponse(periods=periods, active_period_id=active_id)
+
+
+@router.get("/periods/deleted", response_model=PeriodListResponse)
+def get_deleted_periods() -> PeriodListResponse:
+    _, active_id = list_periods()
+    return PeriodListResponse(periods=list_deleted_periods(), active_period_id=active_id)
 
 
 @router.get("/periods/{period_id}/student-plans", response_model=PeriodStudentPlansResponse)
@@ -535,7 +669,13 @@ def remove_teacher(teacher_id: int) -> dict:
 
 @router.post("/periods", response_model=PeriodResponse)
 def create_shift_period(body: PeriodCreateRequest) -> PeriodResponse:
-    period = create_period(body.name, body.start_date, body.end_date, body.closed_dates)
+    period = create_period(
+        body.name,
+        body.start_date,
+        body.end_date,
+        body.closed_dates,
+        location_slug=body.location_slug,
+    )
     open_dates = open_dates_for_period(period)
     day_count = bootstrap_period_dashboards(period.id)
     closed_note = f"・休校 {len(body.closed_dates)} 日" if body.closed_dates else ""
@@ -556,6 +696,29 @@ def activate_period(period_id: int) -> PeriodResponse:
         dates=iter_dates(period.start_date, period.end_date),
         open_dates=open_dates,
         message=f"講習「{period.name}」を選択しました",
+    )
+
+
+@router.delete("/periods/{period_id}", response_model=PeriodResponse)
+def remove_period(period_id: int) -> PeriodResponse:
+    period = delete_period(period_id)
+    return PeriodResponse(
+        period=period,
+        dates=iter_dates(period.start_date, period.end_date),
+        open_dates=[],
+        message=f"講習「{period.name}」を削除しました（復元可能）",
+    )
+
+
+@router.patch("/periods/{period_id}/restore", response_model=PeriodResponse)
+def restore_deleted_period(period_id: int) -> PeriodResponse:
+    period = restore_period(period_id)
+    open_dates = open_dates_for_period(period)
+    return PeriodResponse(
+        period=period,
+        dates=iter_dates(period.start_date, period.end_date),
+        open_dates=open_dates,
+        message=f"講習「{period.name}」を復元しました",
     )
 
 

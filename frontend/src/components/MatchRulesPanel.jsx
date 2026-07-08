@@ -13,10 +13,12 @@ export const DEFAULT_MATCH_RULES = {
   weekly_limits: { ...DEFAULT_WEEKLY_LIMITS },
 };
 
-const MATH_SUBJECTS = new Set(['数学', '数学I', '数学II']);
+const MATH_SUBJECTS = new Set(['数学', '算数', '数学I', '数学II']);
+const SCIENCE_SUBJECTS = new Set(['理科', '物理', '化学']);
 
 export function normalizeSubject(subject) {
   if (MATH_SUBJECTS.has(subject)) return '数学';
+  if (SCIENCE_SUBJECTS.has(subject)) return '理科';
   return subject;
 }
 

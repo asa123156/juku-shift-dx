@@ -4,6 +4,8 @@ from pydantic import BaseModel, Field
 class SubjectPlanItem(BaseModel):
     subject: str = Field(min_length=1, description="教科名")
     slot_count: int = Field(ge=0, le=60, description="講習期間中の希望コマ数")
+    teacher_id: int | None = Field(default=None, ge=1, description="担当講師（省略可）")
+    teacher_name: str | None = Field(default=None, description="表示用（レスポンスのみ）")
 
 
 class StudentSubjectPlansBody(BaseModel):

@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field, field_validator
 from services.slot_timing import SLOT_KEYS as _SLOT_KEY_LIST, empty_slot_map
 
 PeriodStatus = Literal["DRAFT", "COLLECTING", "FINALIZED"]
+PeriodKind = Literal["REGULAR", "CRAM"]
 SlotSymbol = Literal["◎", "×", ""]
 SubmitRole = Literal["teacher", "student"]
 
@@ -22,6 +23,9 @@ class Period(BaseModel):
     end_date: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
     status: PeriodStatus = "DRAFT"
     closed_dates: list[str] = Field(default_factory=list, description="休校日（日曜以外で除外する日）")
+    is_deleted: bool = False
+    location_slug: str = Field(default="hakutei", description="時間割出力形式（拠点フォルダ slug）")
+    period_kind: PeriodKind = Field(default="CRAM", description="REGULAR=年度通常授業, CRAM=講習")
 
 
 class PeriodCreateRequest(BaseModel):
@@ -29,6 +33,7 @@ class PeriodCreateRequest(BaseModel):
     start_date: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
     end_date: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
     closed_dates: list[str] = Field(default_factory=list, description="開校しない日（日曜は自動除外）")
+    location_slug: str = Field(default="hakutei", min_length=1, description="時間割出力形式（拠点 slug）")
 
     @field_validator("closed_dates")
     @classmethod
@@ -108,13 +113,18 @@ class MyScheduleResponse(BaseModel):
     period_start_date: str = ""
     period_end_date: str = ""
     period_status: PeriodStatus
+    period_kind: str = "CRAM"
     schedule_requested: bool = False
     schedule_published: bool = False
+    submission_complete: bool = False
+    resubmit_pending: bool = False
     readonly: bool
     time_slots: list[dict] = Field(default_factory=list)
     subject_plans: list[dict] = Field(default_factory=list, description="生徒希望教科 [{subject, slot_count}]")
     message: str | None = None
     dates: list[ScheduleDay]
+    calendar_year: int | None = None
+    month: int | None = None
 
 
 class ShiftImportResponse(BaseModel):

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAdminSession } from '../hooks/useAdminSession';
 import { AdminSidebar } from '../components/AdminSidebar';
+import { parseApiError } from '../utils/apiError';
 
 const LEVEL_OPTIONS = [
   { value: 'elementary', label: '小学部' },
@@ -72,11 +73,13 @@ export default function AdminManage() {
   const [error, setError] = useState(null);
 
   const [periods, setPeriods] = useState([]);
+  const [deletedPeriods, setDeletedPeriods] = useState([]);
   const [activePeriodId, setActivePeriodId] = useState(null);
   const [students, setStudents] = useState([]);
   const [teachers, setTeachers] = useState([]);
 
-  const [periodForm, setPeriodForm] = useState({ name: '', start_date: '', end_date: '' });
+  const [periodForm, setPeriodForm] = useState({ name: '', start_date: '', end_date: '', location_slug: 'hakutei' });
+  const [locationOptions, setLocationOptions] = useState([]);
   const [openDateSelection, setOpenDateSelection] = useState([]);
   const [studentForm, setStudentForm] = useState({ name: '', school_level: 'middle', grade_year: 2 });
   const [teacherForm, setTeacherForm] = useState({ name: '' });
@@ -86,20 +89,36 @@ export default function AdminManage() {
   const loadAll = useCallback(async () => {
     setError(null);
     try {
-      const [pRes, sRes, tRes] = await Promise.all([
+      const [pRes, pdRes, sRes, tRes] = await Promise.all([
         fetch('/api/admin/periods'),
+        fetch('/api/admin/periods/deleted'),
         fetch('/api/admin/students'),
         fetch('/api/admin/teachers'),
       ]);
-      if (!pRes.ok || !sRes.ok || !tRes.ok) throw new Error('データの取得に失敗しました');
+      if (!pRes.ok) throw new Error(await parseApiError(pRes, '講習一覧の取得に失敗しました'));
+      if (!sRes.ok) throw new Error(await parseApiError(sRes, '生徒一覧の取得に失敗しました'));
+      if (!tRes.ok) throw new Error(await parseApiError(tRes, '講師一覧の取得に失敗しました'));
       const pData = await pRes.json();
+      const pdData = pdRes.ok ? await pdRes.json() : { periods: [] };
       const sData = await sRes.json();
       const tData = await tRes.json();
       setPeriods(pData.periods ?? []);
+      setDeletedPeriods(pdData.periods ?? []);
       const pid = pData.active_period_id;
       setActivePeriodId(pid);
       setStudents(sData.students ?? []);
       setTeachers(tData.teachers ?? []);
+      fetch('/api/export/locations')
+        .then((r) => r.json())
+        .then((data) => {
+          const locs = data.locations ?? [];
+          setLocationOptions(locs);
+          const def = locs.find((l) => l.default) ?? locs[0];
+          if (def) {
+            setPeriodForm((prev) => ({ ...prev, location_slug: prev.location_slug || def.slug }));
+          }
+        })
+        .catch(() => {});
     } catch (err) {
       setError(err.message);
     }
@@ -134,24 +153,30 @@ export default function AdminManage() {
     e.preventDefault();
     setMessage(null);
     setError(null);
-    if (openDateSelection.length === 0) {
-      setError('開校日を1日以上選んでください');
+    if (!periodForm.start_date || !periodForm.end_date) {
+      setError('開始日と終了日を入力してください');
       return;
     }
-    const closed_dates = periodCandidates.filter((d) => !openDateSelection.includes(d));
+    if (periodForm.end_date < periodForm.start_date) {
+      setError('終了日は開始日以降にしてください');
+      return;
+    }
+    const effectiveOpen = openDateSelection.length > 0 ? openDateSelection : periodCandidates;
+    if (effectiveOpen.length === 0) {
+      setError('開校日がありません。期間内に日曜以外の日を含めてください');
+      return;
+    }
+    const closed_dates = periodCandidates.filter((d) => !effectiveOpen.includes(d));
     try {
       const res = await fetch('/api/admin/periods', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...periodForm, closed_dates }),
       });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(body.detail || '講習の作成に失敗しました');
-      }
+      if (!res.ok) throw new Error(await parseApiError(res, '講習の作成に失敗しました'));
       const data = await res.json();
       setMessage(data.message);
-      setPeriodForm({ name: '', start_date: '', end_date: '' });
+      setPeriodForm({ name: '', start_date: '', end_date: '', location_slug: periodForm.location_slug || 'hakutei' });
       setOpenDateSelection([]);
       await loadAll();
     } catch (err) {
@@ -179,6 +204,35 @@ export default function AdminManage() {
     }
   };
 
+  const handleDeletePeriod = async (period) => {
+    if (!window.confirm(`講習「${period.name}」を削除しますか？\nあとで復元できます。`)) return;
+    setMessage(null);
+    setError(null);
+    try {
+      const res = await fetch(`/api/admin/periods/${period.id}`, { method: 'DELETE' });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.detail || '講習の削除に失敗しました');
+      setMessage(data.message || `講習「${period.name}」を削除しました`);
+      await loadAll();
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
+  const handleRestorePeriod = async (period) => {
+    setMessage(null);
+    setError(null);
+    try {
+      const res = await fetch(`/api/admin/periods/${period.id}/restore`, { method: 'PATCH' });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.detail || '講習の復元に失敗しました');
+      setMessage(data.message || `講習「${period.name}」を復元しました`);
+      await loadAll();
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
   const handleSaveStudent = async (e) => {
     e.preventDefault();
     setMessage(null);
@@ -193,10 +247,7 @@ export default function AdminManage() {
           body: JSON.stringify(studentForm),
         },
       );
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(body.detail || (isEdit ? '生徒の更新に失敗しました' : '生徒の追加に失敗しました'));
-      }
+      if (!res.ok) throw new Error(await parseApiError(res, (isEdit ? '生徒の更新に失敗しました' : '生徒の追加に失敗しました')));
       const data = await res.json();
       if (isEdit) {
         setMessage(`生徒「${data.name}」を更新しました`);
@@ -251,10 +302,7 @@ export default function AdminManage() {
           body: JSON.stringify(teacherForm),
         },
       );
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(body.detail || (isEdit ? '講師の更新に失敗しました' : '講師の追加に失敗しました'));
-      }
+      if (!res.ok) throw new Error(await parseApiError(res, (isEdit ? '講師の更新に失敗しました' : '講師の追加に失敗しました')));
       const data = await res.json();
       if (isEdit) {
         setMessage(`講師「${data.name}」を更新しました`);
@@ -359,7 +407,26 @@ export default function AdminManage() {
                 className="mt-1 w-full border rounded-lg px-3 py-2"
               />
             </label>
-            {periodCandidates.length > 0 && (
+            {locationOptions.length > 0 && (
+              <label className="block sm:col-span-2">
+                <span className="text-sm font-bold text-gray-600">出力形式（拠点）</span>
+                <select
+                  value={periodForm.location_slug}
+                  onChange={(e) => setPeriodForm({ ...periodForm, location_slug: e.target.value })}
+                  className="mt-1 w-full border rounded-lg px-3 py-2 bg-white"
+                >
+                  {locationOptions.map((loc) => (
+                    <option key={loc.slug} value={loc.slug}>{loc.name}</option>
+                  ))}
+                </select>
+              </label>
+            )}
+            {periodForm.start_date && periodForm.end_date && periodCandidates.length === 0 && (
+              <p className="sm:col-span-2 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                終了日は開始日以降にしてください。日曜以外の開校日が1日以上必要です。
+              </p>
+            )}
+            {periodForm.start_date && periodForm.end_date && periodCandidates.length > 0 && (
               <div className="sm:col-span-2 border rounded-xl p-4 bg-gray-50">
                 <div className="flex items-center justify-between mb-3 gap-2 flex-wrap">
                   <span className="text-sm font-bold text-gray-700">開校日（チェックを外すと休校）</span>
@@ -411,14 +478,48 @@ export default function AdminManage() {
                     <span className="text-xs ml-2 px-2 py-0.5 rounded-full bg-gray-100">{p.status}</span>
                   </div>
                   {p.id !== activePeriodId && (
-                    <button type="button" onClick={() => handleActivatePeriod(p.id)} className="text-sm font-bold text-blue-600 hover:underline">
-                      選択
-                    </button>
+                    <div className="flex items-center gap-3">
+                      <button type="button" onClick={() => handleActivatePeriod(p.id)} className="text-sm font-bold text-blue-600 hover:underline">
+                        選択
+                      </button>
+                      <button type="button" onClick={() => handleDeletePeriod(p)} className="text-sm font-bold text-red-600 hover:underline">
+                        削除
+                      </button>
+                    </div>
                   )}
-                  {p.id === activePeriodId && <span className="text-xs font-bold text-blue-600">使用中</span>}
+                  {p.id === activePeriodId && (
+                    <div className="flex items-center gap-3">
+                      <span className="text-xs font-bold text-blue-600">使用中</span>
+                      <button type="button" onClick={() => handleDeletePeriod(p)} className="text-sm font-bold text-red-600 hover:underline">
+                        削除
+                      </button>
+                    </div>
+                  )}
                 </li>
               ))}
             </ul>
+          )}
+          {deletedPeriods.length > 0 && (
+            <div className="mt-4">
+              <p className="text-sm font-bold text-gray-600 mb-2">削除済み講習（復元可能）</p>
+              <ul className="space-y-2">
+                {deletedPeriods.map((p) => (
+                  <li key={p.id} className="flex items-center justify-between p-3 rounded-xl border border-amber-200 bg-amber-50">
+                    <div>
+                      <span className="font-bold text-amber-900">{p.name}</span>
+                      <span className="text-sm text-amber-800 ml-2">{p.start_date} 〜 {p.end_date}</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleRestorePeriod(p)}
+                      className="text-sm font-bold text-amber-700 hover:underline"
+                    >
+                      復元
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
           )}
         </Section>
 

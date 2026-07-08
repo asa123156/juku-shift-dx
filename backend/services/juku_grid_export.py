@@ -1,34 +1,24 @@
-"""インポート済み月次 Excel に確定割当を書き込んで返す。"""
+"""SQLite の割当データ（正本）を拠点テンプレートに変換して Excel 出力する。"""
 
 from __future__ import annotations
 
 import io
+import re
+from datetime import date, datetime, time
+from pathlib import Path
 
 from fastapi import HTTPException
 from openpyxl import load_workbook
 
 from services.assignment_store import get_assignments_for_date
 from services.entity_store import get_student
-from services.juku_grid_parser import (
-    list_schedule_sheet_names,
-    load_grid_map,
-    resolve_dates_for_sheet,
-)
-from services.period_store import get_period
-from services.schedule_workbook_store import get_period_workbook
+from services.juku_grid_parser import list_schedule_sheet_names, resolve_dates_for_sheet
+from services.location_config import load_grid_map, output_dir_for_period, resolve_location_slug, template_path
+from services.period_store import get_period, open_dates_for_period
 from services.slot_timing import generate_time_slots
 
-# テンプレート書き出し用（Google 連携などで旧来 API が必要な場合のみ）
-from datetime import date, datetime, time  # noqa: E402
-from pathlib import Path  # noqa: E402
-import re  # noqa: E402
 
-from config import BACKEND_DIR  # noqa: E402
-
-TEMPLATES_DIR = BACKEND_DIR / "templates"
-
-
-def _slot_to_time(slot: int) -> time:
+def _slot_to_time(slot: int, location_slug: str | None) -> time:
     for item in generate_time_slots():
         if item["slot"] == slot:
             hh, mm = item["start"].split(":")
@@ -40,10 +30,10 @@ def _count_names_in_row(ws, row_idx: int) -> int:
     return sum(1 for col in range(1, ws.max_column + 1) if ws.cell(row=row_idx, column=col).value == "氏名")
 
 
-def _find_header_row_for_slot(ws, slot: int) -> int | None:
-    cfg = load_grid_map()
+def _find_header_row_for_slot(ws, slot: int, location_slug: str | None) -> int | None:
+    cfg = load_grid_map(location_slug)
     time_col = cfg["time_column"] + 1
-    target_time = _slot_to_time(slot)
+    target_time = _slot_to_time(slot, location_slug)
 
     for row_idx in range(1, ws.max_row + 1):
         cell_val = ws.cell(row=row_idx, column=time_col).value
@@ -59,10 +49,10 @@ def _find_header_row_for_slot(ws, slot: int) -> int | None:
     return None
 
 
-def _data_row_range(ws, header_row: int, slot: int) -> range:
-    cfg = load_grid_map()
+def _data_row_range(ws, header_row: int, slot: int, location_slug: str | None) -> range:
+    cfg = load_grid_map(location_slug)
     time_col = cfg["time_column"] + 1
-    target_time = _slot_to_time(slot)
+    target_time = _slot_to_time(slot, location_slug)
     end_row = ws.max_row
     for row_idx in range(header_row + 1, ws.max_row + 1):
         val = ws.cell(row=row_idx, column=time_col).value
@@ -85,14 +75,39 @@ def _teacher_col_index(teacher_columns: list[int], slot: int, teacher_id: int, a
     return teacher_columns[idx]
 
 
-def _set_date_header(ws, iso_date: str) -> None:
-    cfg = load_grid_map()
+def _write_cell(ws, row: int, col: int, value) -> None:
+    from openpyxl.cell.cell import MergedCell
+
+    cell = ws.cell(row=row, column=col)
+    if isinstance(cell, MergedCell):
+        for merged_range in list(ws.merged_cells.ranges):
+            if (
+                merged_range.min_row <= row <= merged_range.max_row
+                and merged_range.min_col <= col <= merged_range.max_col
+            ):
+                ws.unmerge_cells(str(merged_range))
+                break
+    ws.cell(row=row, column=col, value=value)
+
+
+def _set_date_header(ws, iso_date: str, location_slug: str | None) -> None:
+    cfg = load_grid_map(location_slug)
     dr, dc = cfg["date_header_row"], cfg["date_header_col"]
-    ws.cell(row=dr + 1, column=dc + 1, value=datetime.combine(date.fromisoformat(iso_date), time.min))
+    _write_cell(
+        ws,
+        dr + 1,
+        dc + 1,
+        datetime.combine(date.fromisoformat(iso_date), time.min),
+    )
 
 
-def _fill_assignments_on_sheet(ws, iso_date: str, assignments: list[dict]) -> None:
-    cfg = load_grid_map()
+def _fill_assignments_on_sheet(
+    ws,
+    iso_date: str,
+    assignments: list[dict],
+    location_slug: str | None,
+) -> None:
+    cfg = load_grid_map(location_slug)
     teacher_columns: list[int] = cfg["teacher_columns"]
     offsets = cfg["offsets_from_teacher"]
 
@@ -102,7 +117,7 @@ def _fill_assignments_on_sheet(ws, iso_date: str, assignments: list[dict]) -> No
     fill_counts: dict[tuple[int, int], int] = {}
     for assign in sorted(assignments, key=lambda x: (x["slot"], x["teacher_id"], x["student_id"])):
         slot = int(assign["slot"])
-        header_row = _find_header_row_for_slot(ws, slot)
+        header_row = _find_header_row_for_slot(ws, slot, location_slug)
         if header_row is None:
             continue
         teacher_col = _teacher_col_index(teacher_columns, slot, assign["teacher_id"], assignments)
@@ -117,7 +132,7 @@ def _fill_assignments_on_sheet(ws, iso_date: str, assignments: list[dict]) -> No
         subject_key = "subject_b" if use_b else "subject_a"
         grade_key = "grade_b" if use_b else "grade_a"
 
-        data_rows = list(_data_row_range(ws, header_row, slot))
+        data_rows = list(_data_row_range(ws, header_row, slot, location_slug))
         if not data_rows:
             continue
         target_row = data_rows[min(fill_idx // 2, len(data_rows) - 1)]
@@ -133,12 +148,12 @@ def _fill_assignments_on_sheet(ws, iso_date: str, assignments: list[dict]) -> No
         except HTTPException:
             g_label = ""
 
-        ws.cell(row=target_row, column=name_col, value=assign["student_name"])
-        ws.cell(row=target_row, column=subject_col, value=assign["subject"])
+        _write_cell(ws, target_row, name_col, assign["student_name"])
+        _write_cell(ws, target_row, subject_col, assign["subject"])
         if g_label:
-            ws.cell(row=target_row, column=name_col - 1, value=g_label)
-            ws.cell(row=target_row, column=grade_col, value=g_label)
-        ws.cell(row=target_row, column=teacher_cell_col, value=assign["teacher_name"])
+            _write_cell(ws, target_row, name_col - 1, g_label)
+            _write_cell(ws, target_row, grade_col, g_label)
+        _write_cell(ws, target_row, teacher_cell_col, assign["teacher_name"])
 
 
 def _workbook_bytes(wb) -> bytes:
@@ -146,47 +161,6 @@ def _workbook_bytes(wb) -> bytes:
     wb.save(out)
     wb.close()
     return out.getvalue()
-
-
-def export_period_schedule_workbook(period_id: int) -> tuple[bytes, str]:
-    """インポート済み月次 Excel に割当を反映して返す（非時間割シートは変更しない）。"""
-    stored = get_period_workbook(period_id)
-    if stored is None:
-        raise HTTPException(
-            status_code=404,
-            detail="月次時間割 Excel が未インポートです。先にデータインポートから取り込んでください",
-        )
-
-    raw, filename = stored
-    period = get_period(period_id)
-    period_year = int(str(period.start_date)[:4])
-    cfg = load_grid_map()
-
-    wb = load_workbook(io.BytesIO(raw))
-    schedule_sheets = list_schedule_sheet_names(raw)
-
-    for sheet_name in schedule_sheets:
-        if sheet_name not in wb.sheetnames:
-            continue
-        ws = wb[sheet_name]
-        rows = list(ws.iter_rows(values_only=True))
-        dates = resolve_dates_for_sheet(sheet_name, rows, period_year, cfg)
-        if not dates:
-            continue
-        for iso_date in dates:
-            assignments = get_assignments_for_date(iso_date)
-            if assignments:
-                _fill_assignments_on_sheet(ws, iso_date, assignments)
-
-    return _workbook_bytes(wb), filename
-
-
-def _template_path() -> Path:
-    cfg = load_grid_map()
-    path = TEMPLATES_DIR / cfg["template_file"]
-    if not path.is_file():
-        raise HTTPException(status_code=500, detail="時間割テンプレートが見つかりません")
-    return path
 
 
 def _daily_template_sheet_name(wb) -> str:
@@ -201,45 +175,105 @@ def _sheet_title_for_date(iso_date: str) -> str:
     return f"{d.month}月{d.day}日"
 
 
-def _build_workbook_from_template(period_id: int) -> bytes:
-    """インポートファイルが無い場合の Google 書き出し用フォールバック。"""
-    from services.period_store import open_dates_for_period
-
-    period = get_period(period_id)
-    if period.status != "FINALIZED":
-        raise HTTPException(status_code=409, detail="エクスポートは FINALIZED の講習期間のみ可能です")
-
-    open_dates = open_dates_for_period(period)
+def _build_workbook_for_open_dates(open_dates: list[str], location_slug: str) -> bytes:
+    slug = resolve_location_slug(location_slug)
     if not open_dates:
         raise HTTPException(status_code=404, detail="開校日がありません")
 
-    template_bytes = _template_path().read_bytes()
+    template_bytes = template_path(slug).read_bytes()
     wb = load_workbook(io.BytesIO(template_bytes))
     template_name = _daily_template_sheet_name(wb)
+    template_ws = wb[template_name]
     for name in list(wb.sheetnames):
         if name != template_name:
             del wb[name]
 
-    for idx, iso_date in enumerate(open_dates):
-        if idx == 0:
-            ws = wb[template_name]
-        else:
-            fresh = load_workbook(io.BytesIO(template_bytes))
-            fresh_name = _daily_template_sheet_name(fresh)
-            ws = wb.copy_worksheet(fresh[fresh_name])
-            fresh.close()
+    worksheets = [template_ws]
+    for _ in range(1, len(open_dates)):
+        worksheets.append(wb.copy_worksheet(template_ws))
+
+    for ws, iso_date in zip(worksheets, open_dates):
         ws.title = _sheet_title_for_date(iso_date)[:31]
         assignments = get_assignments_for_date(iso_date)
-        _set_date_header(ws, iso_date)
-        _fill_assignments_on_sheet(ws, iso_date, assignments)
+        _set_date_header(ws, iso_date, slug)
+        _fill_assignments_on_sheet(ws, iso_date, assignments, slug)
 
     return _workbook_bytes(wb)
 
 
-def export_juku_schedule_workbook(period_id: int) -> bytes:
-    """Google 書き込み用。インポート済みファイルがあればそれを、なければテンプレートから生成。"""
-    stored = get_period_workbook(period_id)
-    if stored is not None:
-        content, _ = export_period_schedule_workbook(period_id)
-        return content
-    return _build_workbook_from_template(period_id)
+def build_schedule_workbook_from_db(period_id: int, location_slug: str | None = None) -> bytes:
+    """DB の assignments を正本として、拠点テンプレートから時間割 Excel を生成する。"""
+    period = get_period(period_id)
+    slug = resolve_location_slug(location_slug or period.location_slug)
+    open_dates = open_dates_for_period(period)
+    return _build_workbook_for_open_dates(open_dates, slug)
+
+
+def build_schedule_workbook_for_calendar_month(
+    calendar_year: int,
+    month: int,
+    location_slug: str | None = None,
+) -> bytes:
+    """指定暦月の開校日分を Excel に出力する。"""
+    from services.academic_calendar import open_dates_for_calendar_month
+    from services.fiscal_year_store import resolve_schedule_period_for_date
+
+    iso_anchor = f"{calendar_year}-{month:02d}-15"
+    period = resolve_schedule_period_for_date(iso_anchor)
+    slug = resolve_location_slug(location_slug or period.location_slug)
+    open_dates = open_dates_for_calendar_month(calendar_year, month, period.closed_dates)
+    return _build_workbook_for_open_dates(open_dates, slug)
+
+
+def export_calendar_month_workbook(
+    calendar_year: int,
+    month: int,
+    location_slug: str | None = None,
+) -> tuple[bytes, str]:
+    """指定暦月の時間割 Excel を返す（DB 正本）。"""
+    from services.fiscal_year_store import resolve_schedule_period_for_date
+
+    iso_anchor = f"{calendar_year}-{month:02d}-15"
+    period = resolve_schedule_period_for_date(iso_anchor)
+    slug = resolve_location_slug(location_slug or period.location_slug)
+    content = build_schedule_workbook_for_calendar_month(calendar_year, month, slug)
+    filename = f"{calendar_year}年{month}月_{slug}_時間割.xlsx"
+    return content, filename
+
+
+def export_period_schedule_workbook(
+    period_id: int,
+    location_slug: str | None = None,
+) -> tuple[bytes, str]:
+    """DB 正本から拠点形式の時間割 Excel を返す。"""
+    period = get_period(period_id)
+    slug = resolve_location_slug(location_slug or period.location_slug)
+    content = build_schedule_workbook_from_db(period_id, slug)
+    filename = f"{period.name}_{slug}_時間割.xlsx"
+    return content, filename
+
+
+def save_schedule_to_output_folder(
+    period_id: int,
+    location_slug: str | None = None,
+) -> dict:
+    """DB 正本を拠点フォルダへ書き出す。output/{slug}/{period_id}_{name}/"""
+    period = get_period(period_id)
+    slug = resolve_location_slug(location_slug or period.location_slug)
+    content = build_schedule_workbook_from_db(period_id, slug)
+    out_dir = output_dir_for_period(period_id, period.name, slug)
+    out_path = out_dir / f"{period.name}_時間割.xlsx"
+    out_path.write_bytes(content)
+    return {
+        "period_id": period_id,
+        "location_slug": slug,
+        "output_dir": str(out_dir),
+        "file_path": str(out_path),
+        "message": f"{slug} 形式で {out_path} に出力しました",
+    }
+
+
+def export_juku_schedule_workbook(period_id: int, location_slug: str | None = None) -> bytes:
+    """Google 書き込み等 — DB 正本から生成。"""
+    content, _ = export_period_schedule_workbook(period_id, location_slug)
+    return content

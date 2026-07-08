@@ -7,7 +7,7 @@ from pathlib import Path
 from openpyxl import Workbook
 
 from services.juku_grid_import import import_juku_grid_records
-from services.juku_grid_parser import list_schedule_sheet_names, parse_juku_grid_xlsx
+from services.juku_grid_parser import list_schedule_sheet_names, load_grid_map, parse_juku_grid_xlsx
 
 
 def _build_minimal_grid_xlsx() -> bytes:
@@ -39,7 +39,9 @@ def _build_minimal_grid_xlsx() -> bytes:
 
 
 def test_parse_hakutei_template() -> None:
-    template = Path(__file__).resolve().parents[1] / "templates" / "hakutei_schedule_template.xlsx"
+    template = (
+        Path(__file__).resolve().parents[1] / "locations" / "hakutei" / "schedule_template.xlsx"
+    )
     records = parse_juku_grid_xlsx(template.read_bytes(), "2026-06-29", 2026, "6月29日")
     assert records == []
 
@@ -74,6 +76,7 @@ def test_parse_minimal_grid() -> None:
 
 def test_import_records() -> None:
     from scripts.generate_demo_data import main as generate_demo
+    from services.assignment_store import get_assignments_for_date
     from services.entity_store import reset_entities_for_tests
     from services.period_store import reset_periods_for_tests
 
@@ -96,7 +99,15 @@ def test_import_records() -> None:
     stats = import_juku_grid_records(1, records)
     assert stats["rows_processed"] == 1
     assert stats["teachers_created"] >= 1
-    assert stats["requests_added"] == 1
+    assert stats["requests_added"] == 0
+    assignments = get_assignments_for_date("2026-06-11")
+    assert any(
+        a["student_name"] == "グリッド花子"
+        and a["teacher_name"] == "グリッド先生"
+        and a.get("is_fixed") is True
+        and a.get("lesson_kind") == "通常"
+        for a in assignments
+    )
 
 
 def run_tests() -> None:

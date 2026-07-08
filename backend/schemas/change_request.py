@@ -20,6 +20,19 @@ class ChangeRequestItem(BaseModel):
     requested_symbol: str
     reason: str = ""
     status: ChangeRequestStatus
+    request_type: str = "SLOT"
+
+
+class ResubmitRequestCreateRequest(BaseModel):
+    period_id: int = Field(ge=1)
+    role: SubmitRole
+    entity_id: int = Field(ge=1)
+    reason: str = Field(default="", max_length=500)
+
+
+class ResubmitRequestCreateResponse(BaseModel):
+    request: ChangeRequestItem
+    message: str
 
 
 class ChangeRequestCreateRequest(BaseModel):

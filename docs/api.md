@@ -55,7 +55,10 @@ Swagger: http://127.0.0.1:8000/docs
 | PATCH | `/api/admin/shifts/slot` | コマのステータスを直接変更 |
 | POST | `/api/admin/shifts/confirm` | （非推奨）シフト確定は期間 FINALIZED を使用 |
 | GET | `/api/admin/periods` | 募集期間一覧 |
+| GET | `/api/admin/periods/deleted` | 削除済み講習一覧（復元用） |
 | POST | `/api/admin/periods` | 募集期間作成（`closed_dates` で休校日指定可） |
+| DELETE | `/api/admin/periods/{id}` | 講習を削除（復元可能） |
+| PATCH | `/api/admin/periods/{id}/restore` | 削除した講習を復元 |
 | PATCH | `/api/admin/periods/{id}/status` | DRAFT → COLLECTING → FINALIZED |
 | GET | `/api/admin/assignments/sheets?period_id=` | 期間の割当シート（生徒・講師） |
 | GET | `/api/admin/assignments/grid?date=` | 1日分の割当グリッド |
@@ -83,8 +86,8 @@ Swagger: http://127.0.0.1:8000/docs
 
 ### 期間ステータスと送付の関係
 
-1. **COLLECTING** — 教室長が `period_base` で ◎ を設定 → 生徒が空き/× を提出 → 教室長が割当
-2. **publish-request** — 生徒に初回提案書を送付（回答開始）
+1. **COLLECTING** — 教室長が `period_base` で ◎ を設定 → 生徒/講師が提出 → 教室長が割当
+2. **publish-request** — 生徒に初回提案書を送付（任意。未送付でも生徒提出は可能）
 3. **publish-schedule / publish-teacher-schedule** — 個人に確定スケジュール送付（readonly 化。科目・通常/講習を表示）
 4. **FINALIZED** — 募集締切。Excel / Google 書き出し可能
 

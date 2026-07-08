@@ -6,9 +6,10 @@ from typing import Any
 
 from fastapi import HTTPException
 
-from services.assignment_store import append_assignment_requests
+from services.assignment_store import append_assignment_requests, get_assignments_for_date
+from services.class_schedule_store import save_schedules_for_date
 from services.entity_store import get_or_create_student, get_or_create_teacher
-from services.period_store import get_period, iter_dates, set_period_base_slot
+from services.period_store import get_period, iter_dates
 from services.schedule_csv_import import _symbol_from_lesson_type
 
 
@@ -31,6 +32,7 @@ def import_juku_grid_records(period_id: int, records: list[dict[str, Any]]) -> d
     }
     seen_slot_pairs: set[tuple[str, str, int, str, str]] = set()
     requests_by_date: dict[str, list[dict]] = {}
+    regular_assignments_by_date: dict[str, list[dict]] = {}
     new_teacher_ids: set[int] = set()
 
     for rec in records:
@@ -75,25 +77,26 @@ def import_juku_grid_records(period_id: int, records: list[dict[str, Any]]) -> d
                 new_teacher_ids.add(teacher["id"])
 
         symbol = _symbol_from_lesson_type(lesson_type)
+        is_regular_lesson = symbol == "◎"
+        if symbol == "":
+            stats["blank_slots"] += 1
 
-        if teacher is not None and slot_key:
-            pair_key = (iso_date, slot_key, teacher["id"], "teacher", symbol)
-            if pair_key not in seen_slot_pairs:
-                set_period_base_slot(period_id, "teacher", teacher["id"], iso_date, slot_key, symbol)
-                stats["teacher_slots_saved"] += 1
-                seen_slot_pairs.add(pair_key)
-                if symbol == "":
-                    stats["blank_slots"] += 1
-                else:
-                    stats["regular_slots"] += 1
-
-            student_pair_key = (iso_date, slot_key, student["id"], "student", symbol)
-            if student_pair_key not in seen_slot_pairs:
-                set_period_base_slot(period_id, "student", student["id"], iso_date, slot_key, symbol)
-                stats["student_slots_saved"] += 1
-                seen_slot_pairs.add(student_pair_key)
-
-        if subject:
+        if teacher is not None and slot_key and is_regular_lesson:
+            regular_assignments_by_date.setdefault(iso_date, []).append(
+                {
+                    "date": iso_date,
+                    "student_id": student["id"],
+                    "student_name": student["name"],
+                    "subject": subject,
+                    "teacher_id": teacher["id"],
+                    "teacher_name": teacher["name"],
+                    "slot": int(slot_key),
+                    "is_fixed": True,
+                    "source": "excel",
+                }
+            )
+            stats["regular_slots"] += 1
+        elif subject:
             requests_by_date.setdefault(iso_date, []).append(
                 {
                     "student_id": student["id"],
@@ -103,6 +106,29 @@ def import_juku_grid_records(period_id: int, records: list[dict[str, Any]]) -> d
             )
 
         stats["rows_processed"] += 1
+
+    for iso_date, regular_assignments in regular_assignments_by_date.items():
+        existing = get_assignments_for_date(iso_date)
+        tutoring = [a for a in existing if not a.get("is_fixed") and (a.get("lesson_kind") or "講習") != "通常"]
+        merged = tutoring + regular_assignments
+        deduped: list[dict] = []
+        seen: set[tuple[int, int, int, str, bool]] = set()
+        for row in merged:
+            fixed = bool(row.get("is_fixed") or row.get("lesson_kind") == "通常")
+            key = (
+                int(row["student_id"]),
+                int(row["teacher_id"]),
+                int(row["slot"]),
+                str(row["subject"]),
+                fixed,
+            )
+            if key in seen:
+                continue
+            seen.add(key)
+            deduped.append(row)
+        save_schedules_for_date(iso_date, deduped, period_id=period_id)
+        stats["teacher_slots_saved"] += len(regular_assignments)
+        stats["student_slots_saved"] += len(regular_assignments)
 
     for iso_date, reqs in requests_by_date.items():
         added, skipped = append_assignment_requests(iso_date, reqs)

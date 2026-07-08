@@ -9,15 +9,23 @@ from sqlalchemy.orm import Session
 from database import SessionLocal
 from models import ShiftChangeRequest
 from schemas.period import empty_slots
+from services.class_schedule_store import clear_tutoring_assignments_for_student
 from services.entity_store import get_student, list_teachers
-from services.period_store import get_entity_base_day, get_period, open_dates_for_period
+from services.period_store import get_period, open_dates_for_period
 from services.schedule_publish_store import (
     is_schedule_published,
+    is_schedule_request_published,
     is_teacher_schedule_published,
+    is_teacher_schedule_request_published,
 )
 from services.student_plan_store import list_plans_for_student
 from services.student_slot_codec import validate_student_slot
-from services.submission_store import get_entity_day, upsert_entity_day
+from services.submission_store import (
+    clear_entity_submissions,
+    get_entity_day,
+    is_entity_fully_submitted,
+    upsert_entity_day,
+)
 
 
 def _session() -> Session:
@@ -46,6 +54,7 @@ def _to_dict(row: ShiftChangeRequest) -> dict:
         "requested_symbol": row.requested_symbol,
         "reason": row.reason,
         "status": row.status,
+        "request_type": row.request_type or "SLOT",
     }
 
 
@@ -53,6 +62,26 @@ def _is_published(period_id: int, role: str, entity_id: int) -> bool:
     if role == "student":
         return is_schedule_published(period_id, entity_id)
     return is_teacher_schedule_published(period_id, entity_id)
+
+
+def _is_proposal_sent(period_id: int, role: str, entity_id: int) -> bool:
+    if role == "student":
+        return is_schedule_request_published(period_id, entity_id)
+    return is_teacher_schedule_request_published(period_id, entity_id)
+
+
+def has_pending_resubmit(period_id: int, role: str, entity_id: int) -> bool:
+    with _session() as db:
+        row = db.scalars(
+            select(ShiftChangeRequest).where(
+                ShiftChangeRequest.period_id == period_id,
+                ShiftChangeRequest.role == role,
+                ShiftChangeRequest.entity_id == entity_id,
+                ShiftChangeRequest.request_type == "RESUBMIT",
+                ShiftChangeRequest.status == "PENDING",
+            )
+        ).first()
+    return row is not None
 
 
 def create_change_request(
@@ -79,9 +108,10 @@ def create_change_request(
         raise HTTPException(status_code=400, detail="希望する状態は 空 または × のみ指定できます")
 
     slot_key = str(slot)
-    base = get_entity_base_day(period_id, role, entity_id, iso_date)
-    if base.get(slot_key) == "◎":
-        raise HTTPException(status_code=409, detail="◎ 通常授業は変更申請できません")
+    from services.class_schedule_store import get_fixed_slots_for_entity
+
+    if slot_key in get_fixed_slots_for_entity(period_id, role, entity_id, iso_date):
+        raise HTTPException(status_code=409, detail="通常授業は変更申請できません")
 
     submitted = get_entity_day(role, entity_id, iso_date) or empty_slots()
     current = submitted.get(slot_key, "")
@@ -98,6 +128,7 @@ def create_change_request(
                 ShiftChangeRequest.slot_date == target_date,
                 ShiftChangeRequest.slot_key == slot_key,
                 ShiftChangeRequest.status == "PENDING",
+                ShiftChangeRequest.request_type == "SLOT",
             )
         ).first()
         if duplicate is not None:
@@ -114,6 +145,51 @@ def create_change_request(
             requested_symbol=requested_symbol,
             reason=reason[:500],
             status="PENDING",
+            request_type="SLOT",
+        )
+        db.add(row)
+        db.commit()
+        db.refresh(row)
+        return _to_dict(row)
+
+
+def create_resubmit_request(
+    period_id: int,
+    role: str,
+    entity_id: int,
+    reason: str = "",
+) -> dict:
+    """確定前: 提出済みスケジュールの変更申請（承認後は割当リセット＋再提出）。"""
+    period = get_period(period_id)
+    if period.status == "FINALIZED":
+        raise HTTPException(status_code=409, detail="確定済みのため、この変更申請は使えません")
+    if _is_published(period_id, role, entity_id):
+        raise HTTPException(
+            status_code=409,
+            detail="確定スケジュール送付後は変更申請を使ってください",
+        )
+    if not _is_proposal_sent(period_id, role, entity_id):
+        raise HTTPException(status_code=409, detail="提案書が届いていません")
+    open_dates = open_dates_for_period(period)
+    if not is_entity_fully_submitted(role, entity_id, open_dates):
+        raise HTTPException(status_code=409, detail="すべての開校日を提出してから変更申請してください")
+    if has_pending_resubmit(period_id, role, entity_id):
+        raise HTTPException(status_code=409, detail="変更申請が承認待ちです")
+
+    first_date = date.fromisoformat(open_dates[0])
+    with _session() as db:
+        row = ShiftChangeRequest(
+            period_id=period_id,
+            role=role,
+            entity_id=entity_id,
+            entity_name=_entity_name(role, entity_id),
+            slot_date=first_date,
+            slot_key="1",
+            current_symbol="",
+            requested_symbol="",
+            reason=reason[:500],
+            status="PENDING",
+            request_type="RESUBMIT",
         )
         db.add(row)
         db.commit()
@@ -167,10 +243,20 @@ def resolve_change_request(request_id: int, action: str) -> dict:
         db.refresh(row)
         result = _to_dict(row)
 
-    if action == "approve":
-        iso_date = result["date"]
-        slots = get_entity_day(result["role"], result["entity_id"], iso_date) or empty_slots()
-        slots[str(result["slot"])] = result["requested_symbol"]  # type: ignore[assignment]
-        upsert_entity_day(result["role"], result["entity_id"], iso_date, slots)
+    if action != "approve":
+        return result
 
+    request_type = result.get("request_type") or "SLOT"
+    if request_type == "RESUBMIT":
+        period = get_period(result["period_id"])
+        open_dates = open_dates_for_period(period)
+        if result["role"] == "student":
+            clear_tutoring_assignments_for_student(result["period_id"], result["entity_id"])
+        clear_entity_submissions(result["role"], result["entity_id"], open_dates)
+        return result
+
+    iso_date = result["date"]
+    slots = get_entity_day(result["role"], result["entity_id"], iso_date) or empty_slots()
+    slots[str(result["slot"])] = result["requested_symbol"]  # type: ignore[assignment]
+    upsert_entity_day(result["role"], result["entity_id"], iso_date, slots)
     return result

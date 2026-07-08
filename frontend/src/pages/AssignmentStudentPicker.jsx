@@ -37,8 +37,10 @@ function formatStudentPlans(student) {
   return null;
 }
 
-function TeacherCard({ teacher, onPublish, publishing }) {
-  const canPublish = !teacher.schedule_published;
+function TeacherCard({ teacher, onPublishRequest, onPublishFinal, requesting, publishing }) {
+  const canRequest = !teacher.schedule_requested;
+  const canPublishFinal = teacher.schedule_requested && !teacher.schedule_published;
+  const isRequesting = requesting === teacher.id;
   const isPublishing = publishing === teacher.id;
 
   return (
@@ -55,21 +57,45 @@ function TeacherCard({ teacher, onPublish, publishing }) {
           <span className="text-xs font-bold bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full">
             送信済
           </span>
+        ) : teacher.schedule_requested ? (
+          <span className="text-xs font-bold bg-indigo-100 text-indigo-800 px-2 py-0.5 rounded-full">
+            提案書送付済
+          </span>
         ) : (
           <span className="text-xs font-bold bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">
-            未送信
+            未送付
           </span>
         )}
       </div>
-      {canPublish && (
+      {canRequest && (
+        <button
+          type="button"
+          disabled={isRequesting}
+          onClick={() => onPublishRequest(teacher.id)}
+          className="mt-3 w-full bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-400 text-white text-sm font-bold py-2.5 rounded-xl shadow-sm transition-colors"
+        >
+          {isRequesting ? '送信中...' : '提案書を送付（回答依頼）'}
+        </button>
+      )}
+      {canPublishFinal && (
         <button
           type="button"
           disabled={isPublishing}
-          onClick={() => onPublish(teacher.id)}
-          className="mt-3 w-full bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white text-sm font-bold py-2.5 rounded-xl shadow-sm transition-colors"
+          onClick={() => onPublishFinal(teacher.id)}
+          className="mt-3 w-full bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-400 text-white text-sm font-bold py-2.5 rounded-xl shadow-sm transition-colors"
         >
           {isPublishing ? '送信中...' : '確定して講師に送信'}
         </button>
+      )}
+      {!teacher.schedule_requested && !teacher.schedule_published && (
+        <p className="mt-2 text-[11px] text-indigo-700 font-bold">
+          まず提案書を送付して回答を集めてください
+        </p>
+      )}
+      {teacher.schedule_requested && !teacher.schedule_published && (
+        <p className="mt-2 text-[11px] text-indigo-700 font-bold">
+          提案書送付済み（講師は回答可能）
+        </p>
       )}
       {teacher.schedule_published && (
         <p className="mt-2 text-[11px] text-blue-700 font-bold">
@@ -89,33 +115,30 @@ function StudentCard({ student, onOpen, onPublishRequest, onPublishFinal, reques
 
   return (
     <div className="bg-white border-2 border-gray-200 hover:border-blue-300 rounded-xl p-3 transition-all w-full">
-      <button
-        type="button"
-        onClick={() => onOpen(student.id)}
-        className="text-left w-full"
-      >
-        <div className="flex items-baseline gap-2">
-          {student.grade_label && (
-            <span className="text-xs font-bold text-gray-500 shrink-0">{student.grade_label}</span>
-          )}
-          <h4 className="font-bold text-gray-900 truncate">{student.name}</h4>
-        </div>
-        {planSummary && (
-          <p className="text-xs text-gray-500 truncate mt-0.5">
-            希望: {planSummary}
-          </p>
+      <div className="flex items-baseline gap-2">
+        {student.grade_label && (
+          <span className="text-xs font-bold text-gray-500 shrink-0">{student.grade_label}</span>
         )}
-        <p className="text-xs text-blue-600 font-bold mt-2">割当を編集 →</p>
-      </button>
+        <h4 className="font-bold text-gray-900 truncate">{student.name}</h4>
+      </div>
+      {planSummary && (
+        <p className="text-xs text-gray-500 truncate mt-0.5">
+          希望: {planSummary}
+        </p>
+      )}
 
       <div className="mt-2 flex gap-2 flex-wrap items-center">
         {student.pending_count > 0 ? (
           <span className="text-xs font-bold bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full">
             未割当 {student.pending_count}
           </span>
-        ) : (
+        ) : student.assigned_count > 0 ? (
           <span className="text-xs font-bold bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full">
-            割当済
+            割当済 {student.assigned_count}
+          </span>
+        ) : (
+          <span className="text-xs font-bold bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">
+            希望未登録
           </span>
         )}
         {student.schedule_published && (
@@ -129,6 +152,14 @@ function StudentCard({ student, onOpen, onPublishRequest, onPublishFinal, reques
           </span>
         )}
       </div>
+
+      <button
+        type="button"
+        onClick={() => onOpen(student.id)}
+        className="mt-3 w-full bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold py-2.5 rounded-xl shadow-sm transition-colors"
+      >
+        割り当て
+      </button>
 
       {canRequest && (
         <button
@@ -150,9 +181,9 @@ function StudentCard({ student, onOpen, onPublishRequest, onPublishFinal, reques
           {isPublishing ? '送信中...' : '確定して生徒に送信'}
         </button>
       )}
-      {!student.schedule_requested && (
+      {!student.schedule_requested && !student.schedule_published && (
         <p className="mt-2 text-[11px] text-indigo-700 font-bold">
-          まず提案書を送付してから回答を集めてください
+          まず提案書を送付して回答を集めてください
         </p>
       )}
       {student.pending_count > 0 && !student.schedule_published && (
@@ -163,6 +194,11 @@ function StudentCard({ student, onOpen, onPublishRequest, onPublishFinal, reques
       {student.schedule_published && (
         <p className="mt-2 text-[11px] text-blue-700 font-bold">
           生徒画面にスケジュールを送付済みです
+        </p>
+      )}
+      {student.schedule_requested && !student.schedule_published && (
+        <p className="mt-2 text-[11px] text-indigo-700 font-bold">
+          提案書送付済み（生徒は回答可能）
         </p>
       )}
     </div>
@@ -216,7 +252,11 @@ export default function AssignmentStudentPicker() {
   const [message, setMessage] = useState(null);
   const [requestingId, setRequestingId] = useState(null);
   const [publishingId, setPublishingId] = useState(null);
+  const [requestingTeacherId, setRequestingTeacherId] = useState(null);
   const [publishingTeacherId, setPublishingTeacherId] = useState(null);
+  const [isPublishingAll, setIsPublishingAll] = useState(false);
+  const [isPublishingAllRequests, setIsPublishingAllRequests] = useState(false);
+  const [isFinalizing, setIsFinalizing] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
   const loadSheets = useCallback(async (pid) => {
@@ -266,7 +306,11 @@ export default function AssignmentStudentPicker() {
 
   const teacherPublishStats = useMemo(() => {
     const published = teachers.filter((t) => t.schedule_published).length;
-    return { published, total: teachers.length };
+    const requested = teachers.filter((t) => t.schedule_requested).length;
+    const ready = teachers.filter(
+      (t) => t.schedule_requested && !t.schedule_published,
+    ).length;
+    return { published, requested, ready, total: teachers.length };
   }, [teachers]);
 
   const handlePublishRequest = async (studentId) => {
@@ -313,6 +357,28 @@ export default function AssignmentStudentPicker() {
     }
   };
 
+  const handlePublishTeacherRequest = async (teacherId) => {
+    if (!periodId || requestingTeacherId) return;
+    setRequestingTeacherId(teacherId);
+    setMessage(null);
+    setLoadError(null);
+    try {
+      const res = await fetch('/api/admin/assignments/publish-teacher-request', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ period_id: periodId, teacher_id: teacherId }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.detail || '提案書送付に失敗しました');
+      setSheets(data.sheets);
+      setMessage(data.message);
+    } catch (err) {
+      setLoadError(err.message);
+    } finally {
+      setRequestingTeacherId(null);
+    }
+  };
+
   const handlePublishTeacher = async (teacherId) => {
     if (!periodId || publishingTeacherId) return;
     setPublishingTeacherId(teacherId);
@@ -335,6 +401,102 @@ export default function AssignmentStudentPicker() {
     }
   };
 
+  const handlePublishAllRequests = async () => {
+    if (!periodId || isPublishingAllRequests) return;
+    const pendingStudents = students.filter((s) => !s.schedule_requested);
+    const pendingTeachers = teachers.filter((t) => !t.schedule_requested);
+    if (pendingStudents.length === 0 && pendingTeachers.length === 0) {
+      setMessage('送付対象の生徒・講師はいません');
+      return;
+    }
+    const label = `生徒 ${pendingStudents.length} 名・講師 ${pendingTeachers.length} 名`;
+    if (!window.confirm(`${label}に提案書をまとめて送付しますか？`)) return;
+
+    setIsPublishingAllRequests(true);
+    setMessage(null);
+    setLoadError(null);
+    try {
+      for (const student of pendingStudents) {
+        const res = await fetch('/api/admin/assignments/publish-request', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ period_id: periodId, student_id: student.id }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.detail || `「${student.name}」への送付に失敗しました`);
+      }
+      for (const teacher of pendingTeachers) {
+        const res = await fetch('/api/admin/assignments/publish-teacher-request', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ period_id: periodId, teacher_id: teacher.id }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.detail || `「${teacher.name}」への送付に失敗しました`);
+      }
+      await loadSheets(periodId);
+      setMessage(`提案書を${label}に送付しました`);
+    } catch (err) {
+      setLoadError(err.message);
+    } finally {
+      setIsPublishingAllRequests(false);
+    }
+  };
+
+  const handlePublishAll = async () => {
+    if (!periodId || isPublishingAll) return;
+    setIsPublishingAll(true);
+    setMessage(null);
+    setLoadError(null);
+    try {
+      const res = await fetch('/api/admin/assignments/publish-all', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ period_id: periodId }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.detail || '一括送付に失敗しました');
+      if (data.sheets) setSheets(data.sheets);
+      else await loadSheets(periodId);
+      setMessage(data.message);
+    } catch (err) {
+      setLoadError(err.message);
+    } finally {
+      setIsPublishingAll(false);
+    }
+  };
+
+  const handleFinalize = async (force = false) => {
+    if (!periodId || isFinalizing) return;
+    setIsFinalizing(true);
+    setMessage(null);
+    setLoadError(null);
+    try {
+      const res = await fetch(`/api/admin/periods/${periodId}/status`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'FINALIZED', force }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        if (res.status === 409 && !force) {
+          const ok = window.confirm(
+            `${data.detail || '未割当が残っています。'}\n\n強制確定しますか？`,
+          );
+          if (ok) return handleFinalize(true);
+        }
+        throw new Error(data.detail || 'シフト確定に失敗しました');
+      }
+      setMessage(data.message);
+      await loadSheets(periodId);
+    } catch (err) {
+      setLoadError(err.message);
+    } finally {
+      setIsFinalizing(false);
+    }
+  };
+
+  const activePeriod = periods.find((p) => p.id === periodId);
   const byLevel = useMemo(() => groupBySchoolLevel(students), [students]);
   const openDays = sheets?.dates?.length ?? 0;
 
@@ -376,6 +538,34 @@ export default function AssignmentStudentPicker() {
               ))}
             </select>
           )}
+          <div className="flex flex-wrap gap-2 mt-4">
+            <button
+              type="button"
+              onClick={handlePublishAllRequests}
+              disabled={!periodId || isPublishingAllRequests}
+              className="px-4 py-2 text-sm bg-violet-700 hover:bg-violet-800 disabled:opacity-40 text-white rounded-lg font-bold"
+            >
+              {isPublishingAllRequests ? '送付中...' : '提案書まとめて送付'}
+            </button>
+            <button
+              type="button"
+              onClick={handlePublishAll}
+              disabled={!periodId || isPublishingAll}
+              className="px-4 py-2 text-sm bg-sky-700 hover:bg-sky-800 disabled:bg-sky-400 text-white rounded-lg font-bold"
+            >
+              {isPublishingAll ? '送付中...' : '全員に確定送付'}
+            </button>
+            {activePeriod?.status === 'COLLECTING' && (
+              <button
+                type="button"
+                onClick={() => handleFinalize()}
+                disabled={!periodId || isFinalizing}
+                className="px-4 py-2 text-sm bg-emerald-700 hover:bg-emerald-800 disabled:bg-emerald-400 text-white rounded-lg font-bold"
+              >
+                {isFinalizing ? '確定中...' : 'シフト確定'}
+              </button>
+            )}
+          </div>
         </header>
 
         {loadError && <p className="text-red-500 mb-4">{loadError}</p>}
@@ -400,12 +590,12 @@ export default function AssignmentStudentPicker() {
         ) : (
           <>
             <div className="mb-4 p-4 bg-white border border-gray-200 rounded-xl text-sm text-gray-700">
-              <p className="font-bold text-gray-800">確定の流れ</p>
+              <p className="font-bold text-gray-800">提案書 → 確定の流れ</p>
               <ol className="mt-2 list-decimal list-inside space-y-1 text-gray-600">
-                <li>「提案書を送付（回答依頼）」で生徒に初回スケジュールを配布します</li>
-                <li>生徒回答後に割当を完成させる（未割当 0 になるまで）</li>
-                <li>「確定して生徒に送信」を押すと、確定版が生徒画面に届きます</li>
-                <li>送付後は生徒は変更申請のみ可能です</li>
+                <li>各生徒・講師カードの「提案書を送付」で講習日程提案書を配布（通常授業はセルに表示）</li>
+                <li>生徒・講師が空き / × を提出</li>
+                <li>「割り当て」で生徒を講師に割り当て、時間割表で調整</li>
+                <li>「確定して送信」または「全員に確定送付」で確定スケジュールを配布</li>
               </ol>
             </div>
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 items-start">
@@ -428,15 +618,27 @@ export default function AssignmentStudentPicker() {
               <section className="mt-10">
                 <h3 className="text-xl font-bold text-gray-800 mb-2">講師への送付</h3>
                 <p className="text-sm text-gray-600 mb-4">
-                  送信済み <span className="font-bold text-blue-700">{teacherPublishStats.published}</span>
+                  確定送付済み <span className="font-bold text-blue-700">{teacherPublishStats.published}</span>
                   / {teacherPublishStats.total} 名
+                  {teacherPublishStats.requested > 0 && (
+                    <span className="ml-3 text-indigo-700 font-bold">
+                      提案書送付済 {teacherPublishStats.requested} 名
+                    </span>
+                  )}
+                  {teacherPublishStats.ready > 0 && (
+                    <span className="ml-3 text-emerald-700 font-bold">
+                      確定可能 {teacherPublishStats.ready} 名
+                    </span>
+                  )}
                 </p>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
                   {teachers.map((t) => (
                     <TeacherCard
                       key={t.id}
                       teacher={t}
-                      onPublish={handlePublishTeacher}
+                      onPublishRequest={handlePublishTeacherRequest}
+                      onPublishFinal={handlePublishTeacher}
+                      requesting={requestingTeacherId}
                       publishing={publishingTeacherId}
                     />
                   ))}

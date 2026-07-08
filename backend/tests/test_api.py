@@ -109,40 +109,6 @@ def run_tests() -> None:
     assert len(schedule["dates"]) == 11  # 6/9〜6/20、日曜除外
     assert len(schedule.get("time_slots", [])) == SLOT_COUNT
 
-    bulk_blocked = client.patch(
-        "/api/shifts/bulk",
-        json={
-            "role": "student",
-            "entity_id": 1,
-            "period_id": 1,
-            "submissions": [
-                {
-                    "date": "2026-06-10",
-                    "slots": _student_slots(**{
-                        "1": "",
-                        "2": "",
-                        "3": "×",
-                    }),
-                },
-                {
-                    "date": "2026-06-11",
-                    "slots": _student_slots(**{
-                        "1": "×",
-                        "2": "",
-                    }),
-                },
-            ],
-        },
-    )
-    assert bulk_blocked.status_code == 409
-    assert "提案書が未送付" in bulk_blocked.json().get("detail", "")
-
-    request_publish = client.post(
-        "/api/admin/assignments/publish-request",
-        json={"period_id": 1, "student_id": 1},
-    )
-    assert request_publish.status_code == 200, request_publish.text
-
     bulk = client.patch(
         "/api/shifts/bulk",
         json={
@@ -154,7 +120,7 @@ def run_tests() -> None:
                     "date": "2026-06-10",
                     "slots": _student_slots(**{
                         "1": "",
-                        "2": "",
+                        "2": "◎",
                         "3": "×",
                     }),
                 },
@@ -170,6 +136,19 @@ def run_tests() -> None:
     )
     assert bulk.status_code == 200
     assert len(bulk.json()["saved_dates"]) == 2
+
+    after_submit = client.get(
+        "/api/shifts/my-schedule",
+        params={"role": "student", "entity_id": 1, "period_id": 1},
+    ).json()
+    june10 = next(d for d in after_submit["dates"] if d["date"] == "2026-06-10")
+    assert june10["slots"]["2"] == "◎"
+
+    request_publish = client.post(
+        "/api/admin/assignments/publish-request",
+        json={"period_id": 1, "student_id": 1},
+    )
+    assert request_publish.status_code == 200, request_publish.text
 
     student_login = client.post(
         "/api/auth/login",
@@ -241,6 +220,11 @@ def run_tests() -> None:
     assert blocked.status_code == 409
 
     ready_student = next(s for s in sheets_after["students"] if s["pending_count"] == 0)
+    ready_request = client.post(
+        "/api/admin/assignments/publish-request",
+        json={"period_id": 1, "student_id": ready_student["id"]},
+    )
+    assert ready_request.status_code == 200, ready_request.text
     publish = client.post(
         "/api/admin/assignments/publish-schedule",
         json={"period_id": 1, "student_id": ready_student["id"]},
@@ -248,6 +232,11 @@ def run_tests() -> None:
     assert publish.status_code == 200
 
     teacher_row = sheets_after["teachers"][0]
+    teacher_request = client.post(
+        "/api/admin/assignments/publish-teacher-request",
+        json={"period_id": 1, "teacher_id": teacher_row["id"]},
+    )
+    assert teacher_request.status_code == 200, teacher_request.text
     publish_teacher = client.post(
         "/api/admin/assignments/publish-teacher-schedule",
         json={"period_id": 1, "teacher_id": teacher_row["id"]},
@@ -418,6 +407,40 @@ def run_tests() -> None:
 
     t_deleted = client.delete(f"/api/admin/teachers/{t_id}")
     assert t_deleted.status_code == 200
+
+    new_period = client.post(
+        "/api/admin/periods",
+        json={
+            "name": "削除復元テスト講習",
+            "start_date": "2026-07-01",
+            "end_date": "2026-07-05",
+            "closed_dates": [],
+        },
+    )
+    assert new_period.status_code == 200, new_period.text
+    new_period_id = new_period.json()["period"]["id"]
+
+    request_from_draft = client.post(
+        "/api/admin/assignments/publish-request",
+        json={"period_id": new_period_id, "student_id": 1},
+    )
+    assert request_from_draft.status_code == 200, request_from_draft.text
+    periods_now = client.get("/api/admin/periods").json()["periods"]
+    draft_promoted = next(p for p in periods_now if p["id"] == new_period_id)
+    assert draft_promoted["status"] == "COLLECTING"
+
+    deleted = client.delete(f"/api/admin/periods/{new_period_id}")
+    assert deleted.status_code == 200, deleted.text
+
+    periods_after_delete = client.get("/api/admin/periods").json()
+    assert all(p["id"] != new_period_id for p in periods_after_delete["periods"])
+    deleted_periods = client.get("/api/admin/periods/deleted").json()
+    assert any(p["id"] == new_period_id for p in deleted_periods["periods"])
+
+    restored = client.patch(f"/api/admin/periods/{new_period_id}/restore")
+    assert restored.status_code == 200, restored.text
+    periods_after_restore = client.get("/api/admin/periods").json()
+    assert any(p["id"] == new_period_id for p in periods_after_restore["periods"])
 
     print("All tests passed.")
 

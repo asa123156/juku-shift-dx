@@ -7,11 +7,12 @@ class AssignmentRecord(BaseModel):
     date: str
     student_id: int
     student_name: str
-    subject: str
+    subject: str = Field(default="")
     teacher_id: int
     teacher_name: str
     slot: int = Field(ge=1, le=SLOT_COUNT)
     lesson_kind: str = Field(default="講習", pattern="^(通常|講習)$")
+    is_fixed: bool | None = Field(default=None, description="True=通常授業（◎固定）")
 
 
 class AssignmentCandidate(BaseModel):
@@ -70,27 +71,43 @@ class MatchRulesRequest(BaseModel):
 
 class ManualAssignRequest(BaseModel):
     date: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
-    student_id: int = Field(ge=1)
+    student_id: int | None = Field(default=None, ge=1)
     student_name: str = Field(min_length=1)
-    subject: str = Field(min_length=1)
+    subject: str = Field(default="", description="講習枠では必須。通常（is_fixed）では省略可")
     teacher_id: int = Field(ge=1)
     slot: int = Field(ge=1, le=SLOT_COUNT)
     period_id: int | None = Field(default=None, ge=1)
+    is_fixed: bool = Field(default=False, description="True=通常授業（◎固定）")
     rules: MatchRulesRequest | None = None
+    skip_rules: bool = Field(
+        default=False,
+        description="時間割表からの直接入力時は True（シフト希望・週上限などをスキップ）",
+    )
 
 
 class AssignmentGridSlot(BaseModel):
     slot: int
     availability: str
     assignable: bool
+    max_lanes: int = Field(default=2, ge=2, le=4)
+    lesson_format: str = Field(default="1対2")
     assignments: list[AssignmentRecord] = Field(default_factory=list)
     assignment: AssignmentRecord | None = None
     lanes: list[dict] = Field(default_factory=list)
 
 
+class SlotCapacityUpdateRequest(BaseModel):
+    date: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
+    teacher_id: int = Field(ge=1)
+    slot: int = Field(ge=1, le=SLOT_COUNT)
+    max_lanes: int = Field(ge=2, le=4, description="2=1対2, 4=1対4")
+
+
 class StudentSubjectPlanItem(BaseModel):
     subject: str
     slot_count: int = Field(ge=0)
+    teacher_id: int | None = None
+    teacher_name: str | None = None
 
 
 class AssignmentGridTeacher(BaseModel):
@@ -150,6 +167,7 @@ class AssignmentSheetStudent(BaseModel):
     level_label: str = ""
     days: dict[str, AssignmentSheetStudentDay]
     pending_count: int = 0
+    assigned_count: int = 0
     subjects: list[str] = Field(default_factory=list)
     subject_plans: list[StudentSubjectPlanItem] = Field(default_factory=list)
     schedule_requested: bool = False
@@ -175,7 +193,13 @@ class AssignmentSheetTeacher(BaseModel):
     name: str
     color: str = ""
     days: dict[str, AssignmentSheetTeacherDay]
+    schedule_requested: bool = False
     schedule_published: bool = False
+
+
+class PublishTeacherScheduleRequestOnlyRequest(BaseModel):
+    period_id: int = Field(ge=1)
+    teacher_id: int = Field(ge=1)
 
 
 class AssignmentSheetsResponse(BaseModel):
@@ -191,6 +215,12 @@ class AssignmentSheetsResponse(BaseModel):
 
 
 class PublishScheduleRequestOnlyResponse(BaseModel):
+    message: str
+    already_published: bool = False
+    sheets: AssignmentSheetsResponse
+
+
+class PublishTeacherScheduleRequestOnlyResponse(BaseModel):
     message: str
     already_published: bool = False
     sheets: AssignmentSheetsResponse

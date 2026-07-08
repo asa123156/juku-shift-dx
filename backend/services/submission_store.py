@@ -137,3 +137,31 @@ def get_submissions_for_date(role: str, iso_date: str) -> dict[int, dict[str, Sl
         if row.slot_key in grouped[row.entity_id]:
             grouped[row.entity_id][row.slot_key] = row.symbol  # type: ignore[assignment]
     return grouped
+
+
+def clear_entity_submissions(role: str, entity_id: int, open_dates: list[str]) -> int:
+    """指定期間の開校日分の提出データを削除する。"""
+    if not open_dates:
+        return 0
+    target_dates = [date.fromisoformat(iso_date) for iso_date in open_dates]
+    with _session() as db:
+        deleted = (
+            db.query(ShiftSubmission)
+            .filter(
+                ShiftSubmission.role == role,
+                ShiftSubmission.entity_id == entity_id,
+                ShiftSubmission.slot_date.in_(target_dates),
+            )
+            .delete(synchronize_session=False)
+        )
+        db.commit()
+    return int(deleted)
+
+
+def is_entity_fully_submitted(role: str, entity_id: int, open_dates: list[str]) -> bool:
+    if not open_dates:
+        return False
+    for iso_date in open_dates:
+        if entity_id not in get_submissions_for_date(role, iso_date):
+            return False
+    return True

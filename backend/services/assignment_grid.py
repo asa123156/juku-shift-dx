@@ -5,12 +5,20 @@ from fastapi import HTTPException
 from schemas.assignment import AssignmentRecord
 from services.assignment_store import (
     add_assignment,
-    get_assignment_requests_for_date,
     get_assignments_for_date,
     remove_assignment_at_slot,
 )
+from services.period_store import find_period_for_date
+from services.schedule_context import resolve_grid_period_ids
+from services.schedule_canonical import derive_unassigned_for_date
 from schemas.period import empty_slots
 from services.teacher_slot_lanes import build_teacher_lanes, teacher_slot_assignable
+from services.slot_capacity_store import (
+    DEFAULT_MAX_LANES,
+    get_capacity_map_for_date,
+    lesson_format_label,
+    set_max_lanes as persist_max_lanes,
+)
 from services.assignment_engine import teachers_from_dashboard, validate_assignment
 from services.availability_dashboard import build_availability_dashboard
 from services.match_rules import MatchRules
@@ -84,7 +92,12 @@ def _build_student_sheets(iso_date: str, assignments: list[dict], pending_reques
 def build_assignment_grid(iso_date: str) -> dict:
     availability = build_availability_dashboard(iso_date)
     assignments = get_assignments_for_date(iso_date)
-    pending_requests = get_assignment_requests_for_date(iso_date)
+    period = find_period_for_date(iso_date)
+    if period is not None:
+        pending_requests = derive_unassigned_for_date(period.id, iso_date)
+    else:
+        pending_requests = []
+    capacity_map = get_capacity_map_for_date(iso_date)
 
     assignment_by_teacher_slot: dict[tuple[int, int], list[dict]] = {}
     for row in assignments:
@@ -97,12 +110,15 @@ def build_assignment_grid(iso_date: str) -> dict:
         for slot_num in SLOT_NUMS:
             avail = t.get(f"s{slot_num}", "")
             at_slot = assignment_by_teacher_slot.get((t["id"], slot_num), [])
-            lanes = build_teacher_lanes(avail, at_slot)
+            max_lanes = capacity_map.get((t["id"], slot_num), DEFAULT_MAX_LANES)
+            lanes = build_teacher_lanes(avail, at_slot, max_lanes=max_lanes)
             slots.append(
                 {
                     "slot": slot_num,
                     "availability": avail,
-                    "assignable": teacher_slot_assignable(avail, at_slot),
+                    "assignable": teacher_slot_assignable(avail, at_slot, max_lanes=max_lanes),
+                    "max_lanes": max_lanes,
+                    "lesson_format": lesson_format_label(max_lanes),
                     "lanes": lanes,
                     "assignments": at_slot,
                     "assignment": at_slot[0] if at_slot else None,
@@ -124,6 +140,7 @@ def build_assignment_grid(iso_date: str) -> dict:
         "students": _build_student_sheets(iso_date, assignments, pending_requests),
         "assignments": deepcopy(assignments),
         "pending_requests": deepcopy(pending_requests),
+        "period_context": resolve_grid_period_ids(iso_date),
     }
 
 
@@ -136,6 +153,10 @@ def manual_assign(
     slot: int,
     rules: MatchRules | None = None,
     all_assignments: list[dict] | None = None,
+    *,
+    skip_rules: bool = False,
+    is_fixed: bool = False,
+    period_id: int | None = None,
 ) -> dict:
     grid = build_assignment_grid(iso_date)
     teacher_row = next((t for t in grid["teachers"] if t["id"] == teacher_id), None)
@@ -146,24 +167,31 @@ def manual_assign(
     if slot_info is None or not slot_info["assignable"]:
         raise HTTPException(status_code=409, detail="このコマには割当できません（空きレーンがありません）")
 
-    rules = rules or MatchRules()
-    dashboard = build_availability_dashboard(iso_date)
-    teacher_list = teachers_from_dashboard(dashboard)
     existing = get_assignments_for_date(iso_date)
-    pool = all_assignments if all_assignments is not None else existing
-    err = validate_assignment(
-        student_id,
-        subject,
-        teacher_id,
-        slot,
-        iso_date,
-        teacher_list,
-        existing,
-        rules=rules,
-        all_assignments=pool,
-    )
-    if err:
-        raise HTTPException(status_code=409, detail=err)
+    preferred_teacher_id = None
+    if period_id is not None:
+        from services.student_plan_store import get_preferred_teacher_id
+
+        preferred_teacher_id = get_preferred_teacher_id(period_id, student_id, subject)
+    if not skip_rules:
+        rules = rules or MatchRules()
+        dashboard = build_availability_dashboard(iso_date)
+        teacher_list = teachers_from_dashboard(dashboard)
+        pool = all_assignments if all_assignments is not None else existing
+        err = validate_assignment(
+            student_id,
+            subject,
+            teacher_id,
+            slot,
+            iso_date,
+            teacher_list,
+            existing,
+            rules=rules,
+            all_assignments=pool,
+            preferred_teacher_id=preferred_teacher_id,
+        )
+        if err:
+            raise HTTPException(status_code=409, detail=err)
 
     names = _teacher_name_map(iso_date)
     teacher_name = names.get(teacher_id, f"講師{teacher_id}")
@@ -174,17 +202,62 @@ def manual_assign(
                 iso_date, row["teacher_id"], row["slot"], student_id=student_id
             )
 
+    if is_fixed and not subject.strip():
+        subject = "通常"
+
+    from services.fiscal_year_store import resolve_schedule_period_for_date
+    from services.schedule_context import tutoring_period_id_for_date
+
+    regular_period = resolve_schedule_period_for_date(iso_date)
+    if is_fixed:
+        period_id = regular_period.id
+    elif period_id is not None:
+        period_id = tutoring_period_id_for_date(iso_date, period_id)
+    else:
+        period_id = tutoring_period_id_for_date(iso_date, regular_period.id)
+
     record = AssignmentRecord(
         date=iso_date,
         student_id=student_id,
         student_name=student_name,
-        subject=subject,
+        subject=subject.strip() or "通常",
         teacher_id=teacher_id,
         teacher_name=teacher_name,
         slot=slot,
+        lesson_kind="通常" if is_fixed else "講習",
+        is_fixed=is_fixed,
     )
-    add_assignment(record)
-    from services.assignment_store import clear_request_fulfilled
+    if skip_rules or is_fixed:
+        from services.class_schedule_store import add_fixed_schedule_with_weekly_repeat, add_schedule
 
-    clear_request_fulfilled(iso_date, student_id, subject)
+        if is_fixed and period_id is not None:
+            add_fixed_schedule_with_weekly_repeat(record, period_id=period_id, source="manual")
+        else:
+            add_schedule(record, period_id=period_id, is_fixed=is_fixed, source="manual")
+    else:
+        add_assignment(record)
+    return build_assignment_grid(iso_date)
+
+
+def update_slot_capacity(
+    iso_date: str,
+    teacher_id: int,
+    slot: int,
+    max_lanes: int,
+) -> dict:
+    grid = build_assignment_grid(iso_date)
+    teacher_row = next((t for t in grid["teachers"] if t["id"] == teacher_id), None)
+    if teacher_row is None:
+        raise HTTPException(status_code=404, detail=f"Teacher id={teacher_id} not found")
+    slot_info = next((s for s in teacher_row["slots"] if s["slot"] == slot), None)
+    if slot_info is None:
+        raise HTTPException(status_code=404, detail=f"Slot {slot} not found")
+    persist_max_lanes(
+        teacher_id,
+        iso_date,
+        slot,
+        max_lanes,
+        avail=slot_info["availability"],
+        assignments=slot_info.get("assignments") or [],
+    )
     return build_assignment_grid(iso_date)
