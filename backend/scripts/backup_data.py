@@ -42,11 +42,8 @@ def _prune_old(keep: int) -> list[str]:
     return removed
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(description="DB と JSON データをバックアップする")
-    parser.add_argument("--keep", type=int, default=DEFAULT_KEEP, help="保持する世代数")
-    args = parser.parse_args()
-
+def run_backup(keep: int = DEFAULT_KEEP) -> tuple[Path, list[str]]:
+    """スナップショットを作成し、(作成先, 世代管理で削除した名前) を返す。"""
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     snapshot_dir = BACKUPS_DIR / stamp
     suffix = 1
@@ -60,7 +57,16 @@ def main() -> None:
     if DATA_DIR.is_dir():
         shutil.copytree(DATA_DIR, snapshot_dir / "data")
 
-    removed = _prune_old(args.keep)
+    removed = _prune_old(keep)
+    return snapshot_dir, removed
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="DB と JSON データをバックアップする")
+    parser.add_argument("--keep", type=int, default=DEFAULT_KEEP, help="保持する世代数")
+    args = parser.parse_args()
+
+    snapshot_dir, removed = run_backup(args.keep)
     print(f"バックアップ完了: {snapshot_dir}")
     if removed:
         print(f"世代管理で削除: {', '.join(removed)}")

@@ -75,6 +75,9 @@ def migrate_sqlite_schema() -> None:
                 text("ALTER TABLE periods ADD COLUMN period_kind VARCHAR(10) DEFAULT 'CRAM'")
             )
             conn.commit()
+        if "submission_deadline" not in col_names:
+            conn.execute(text("ALTER TABLE periods ADD COLUMN submission_deadline DATE"))
+            conn.commit()
         assign_cols = {
             row[1] for row in conn.execute(text("PRAGMA table_info(assignments)")).fetchall()
         }

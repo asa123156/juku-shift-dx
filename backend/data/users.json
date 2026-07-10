@@ -1,7 +1,7 @@
 [
   {
     "email": "teacher@example.com",
-    "password": "$2b$12$MhCN8ze3Y6D2xOxNPX9.j.T/LcEUfmSRSGuuA3.EMsIh05zlmHSJy",
+    "password": "$2b$12$qie2R8qLClKTIMFF6PU0HuqiKzgIUIyEy.XTRuxjOV21d.raadkqm",
     "role": "teacher",
     "teacher_id": 1,
     "name": "田中 先生",
@@ -9,7 +9,7 @@
   },
   {
     "email": "admin@example.com",
-    "password": "$2b$12$z5HY/zDNlQVrFcD9bWz6AuGDMiGUWe3ncCJDpZaZcHMkwIRnVI/vm",
+    "password": "$2b$12$XvHFhjZn0d8y.Jz6RzmYCeJJmmF.2ivC2w3aW/I1YSWunzvbyGLwO",
     "role": "admin",
     "teacher_id": null,
     "student_id": null,
@@ -18,7 +18,7 @@
   },
   {
     "email": "student@example.com",
-    "password": "$2b$12$Ze6RTZbt195gKNu0RWf6yuoFPSWWTKGQEhenRQJmRbav9wadIPAli",
+    "password": "$2b$12$8VY4WN9kCrDgSZD1ze.rR.wndQNDaGMw.WkWAO4HSdnPl44kDROyq",
     "role": "student",
     "teacher_id": null,
     "student_id": 1,
@@ -27,7 +27,7 @@
   },
   {
     "email": "student2@example.com",
-    "password": "$2b$12$ZIMLOgx0co8ZaO/JHYNY/.oyQYe86waAbjOUvguSLxOuAH2dbkZQ2",
+    "password": "$2b$12$FXsEgyLE6szvpcXA4eVKgumPGdom8b3QGUu/SZW6zPPSFP9caoJpK",
     "role": "student",
     "teacher_id": null,
     "student_id": 2,
@@ -36,7 +36,7 @@
   },
   {
     "email": "student3@example.com",
-    "password": "$2b$12$gd/hNyF.JR6L1Nw.Un1eluYQdRZGcZatbRv19W5DItKCKkahqDcIC",
+    "password": "$2b$12$py10K/y04hjQXCfaK/UGbu4vE/QSbSEBMbKeDc83O0j3WGAJKqYni",
     "role": "student",
     "teacher_id": null,
     "student_id": 3,
@@ -45,7 +45,7 @@
   },
   {
     "email": "student4@example.com",
-    "password": "$2b$12$.8Gk3aH/oYRfaQb/0PBO5uULay.lqzXXpa3hjWT51DniSS.LwZ2ba",
+    "password": "$2b$12$o3RaF4HwZOL20zoVbICykOiWNAK0LCqN8RPNcBJFdYPf4pHt6N7ka",
     "role": "student",
     "teacher_id": null,
     "student_id": 4,
@@ -54,7 +54,7 @@
   },
   {
     "email": "student5@example.com",
-    "password": "$2b$12$druEC2AyYbOvCIwQruKIbeaL3vGoXUHF77rM0NBV8xV0i/bU1inIG",
+    "password": "$2b$12$2U3hthRCoSz0bnl7b1mpL.WNB10.5oGjAaL3o8IHEO/nCpO77j7he",
     "role": "student",
     "teacher_id": null,
     "student_id": 5,
@@ -63,7 +63,7 @@
   },
   {
     "email": "student99@example.com",
-    "password": "$2b$12$PCJWI9aPKdsGGNYxhl9SzONC/kGq.f.vM981MaIBWQ3z/akAeeYDi",
+    "password": "$2b$12$rKZhIRtvaO3tHhIn2b0Tz.Dpwro/IjP6ql.5YPnBEa/CpVcwVYUHa",
     "role": "student",
     "teacher_id": null,
     "student_id": 99,
@@ -72,7 +72,7 @@
   },
   {
     "email": "teacher2@example.com",
-    "password": "$2b$12$2Bn22JHZ3jPaqoUJOEx0tObj5xYGzYTURSs6GMhIv5Hdu3fWdHE2i",
+    "password": "$2b$12$bdFcCbbaJFSDigv7sHV5buVNXVN394ZCBO5NVxYbOHVyw5CgftYnG",
     "role": "teacher",
     "teacher_id": 2,
     "student_id": null,
@@ -81,11 +81,20 @@
   },
   {
     "email": "teacher3@example.com",
-    "password": "$2b$12$Il.kLdp4xwKUy.CYa7nFwOUvW8k8vKndNQ8uu7E..ka9WH/zPLHSG",
+    "password": "$2b$12$8hWi.q2pSB0nXz47wJzajuhWpH1mR8RT5A6K65FhzcZG.N4ZoLs0u",
     "role": "teacher",
     "teacher_id": 3,
     "student_id": null,
     "name": "鈴木 先生",
+    "redirect": "/teacher"
+  },
+  {
+    "email": "teacher4@example.com",
+    "password": "$2b$12$GTZqOyV1QTwaU6.77tZUaeH.1O8VC4fS2yCQ/F0cbRjKLinD5AYFq",
+    "role": "teacher",
+    "teacher_id": 4,
+    "student_id": null,
+    "name": "テスト講師",
     "redirect": "/teacher"
   }
 ]

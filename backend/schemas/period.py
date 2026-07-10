@@ -26,6 +26,7 @@ class Period(BaseModel):
     is_deleted: bool = False
     location_slug: str = Field(default="hakutei", description="時間割出力形式（拠点フォルダ slug）")
     period_kind: PeriodKind = Field(default="CRAM", description="REGULAR=年度通常授業, CRAM=講習")
+    submission_deadline: str | None = Field(default=None, description="提出期限（表示のみ・提出はブロックしない）")
 
 
 class PeriodCreateRequest(BaseModel):
@@ -34,6 +35,9 @@ class PeriodCreateRequest(BaseModel):
     end_date: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
     closed_dates: list[str] = Field(default_factory=list, description="開校しない日（日曜は自動除外）")
     location_slug: str = Field(default="hakutei", min_length=1, description="時間割出力形式（拠点 slug）")
+    submission_deadline: str | None = Field(
+        default=None, pattern=r"^\d{4}-\d{2}-\d{2}$", description="提出期限（任意）"
+    )
 
     @field_validator("closed_dates")
     @classmethod
@@ -114,6 +118,7 @@ class MyScheduleResponse(BaseModel):
     period_end_date: str = ""
     period_status: PeriodStatus
     period_kind: str = "CRAM"
+    submission_deadline: str | None = None
     schedule_requested: bool = False
     schedule_published: bool = False
     submission_complete: bool = False

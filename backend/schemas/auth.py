@@ -15,3 +15,12 @@ class LoginResponse(BaseModel):
     student_id: int | None = None
     name: str
     redirect: str
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str = Field(min_length=1)
+    new_password: str = Field(min_length=8, description="8文字以上")
+
+
+class ChangePasswordResponse(BaseModel):
+    message: str

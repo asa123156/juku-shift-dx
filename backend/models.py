@@ -29,6 +29,7 @@ class Period(Base):
     is_deleted: Mapped[int] = mapped_column(nullable=False, default=0)
     location_slug: Mapped[str] = mapped_column(String(64), nullable=False, default="hakutei")
     period_kind: Mapped[str] = mapped_column(String(10), nullable=False, default="CRAM")
+    submission_deadline: Mapped[date | None] = mapped_column(Date, nullable=True)
 
 
 class PeriodBaseSlot(Base):

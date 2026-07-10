@@ -1,6 +1,7 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
-from schemas.auth import LoginRequest, LoginResponse
+from dependencies import CurrentUser, get_current_user
+from schemas.auth import ChangePasswordRequest, ChangePasswordResponse, LoginRequest, LoginResponse
 from security import create_access_token, verify_password
 from services.data_loader import load_users
 
@@ -40,3 +41,14 @@ def login(body: LoginRequest) -> LoginResponse:
         name=match["name"],
         redirect=match["redirect"],
     )
+
+
+@router.post("/change-password", response_model=ChangePasswordResponse)
+def change_password(
+    body: ChangePasswordRequest,
+    user: CurrentUser = Depends(get_current_user),
+) -> ChangePasswordResponse:
+    from services.entity_store import change_user_password
+
+    change_user_password(user.email, body.current_password, body.new_password)
+    return ChangePasswordResponse(message="パスワードを変更しました")

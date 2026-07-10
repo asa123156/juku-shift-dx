@@ -124,6 +124,19 @@ def get_dashboard_summary(period_id: int = Query(..., ge=1)) -> dict:
     return build_admin_dashboard_summary(period_id)
 
 
+@router.post("/backup")
+def create_backup() -> dict:
+    """DB と JSON データのスナップショットを backups/ に作成する。"""
+    from scripts.backup_data import run_backup
+
+    snapshot_dir, removed = run_backup()
+    return {
+        "snapshot": snapshot_dir.name,
+        "removed": removed,
+        "message": f"バックアップを作成しました（{snapshot_dir.name}）",
+    }
+
+
 @router.get("/schedule/full")
 def get_schedule_full(period_id: int = Query(..., ge=1)) -> dict:
     """時間割正本（通常＋講習）。"""
@@ -692,6 +705,7 @@ def create_shift_period(body: PeriodCreateRequest) -> PeriodResponse:
         body.end_date,
         body.closed_dates,
         location_slug=body.location_slug,
+        submission_deadline=body.submission_deadline,
     )
     open_dates = open_dates_for_period(period)
     day_count = bootstrap_period_dashboards(period.id)

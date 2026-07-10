@@ -43,6 +43,9 @@ def _to_schema(row: PeriodRow) -> Period:
         is_deleted=bool(row.is_deleted),
         location_slug=getattr(row, "location_slug", None) or "hakutei",
         period_kind=getattr(row, "period_kind", None) or "CRAM",
+        submission_deadline=(
+            row.submission_deadline.isoformat() if row.submission_deadline else None
+        ),
     )
 
 
@@ -159,12 +162,14 @@ def create_period(
     end_date: str,
     closed_dates: list[str] | None = None,
     location_slug: str = "hakutei",
+    submission_deadline: str | None = None,
 ) -> Period:
     from services.location_config import resolve_location_slug
 
     resolve_location_slug(location_slug)
     start_d = date.fromisoformat(start_date)
     end_d = date.fromisoformat(end_date)
+    deadline_d = date.fromisoformat(submission_deadline) if submission_deadline else None
     closed = sorted(set(closed_dates or []))
     for iso in closed:
         d = date.fromisoformat(iso)
@@ -183,6 +188,7 @@ def create_period(
             is_deleted=0,
             location_slug=location_slug,
             period_kind="CRAM",
+            submission_deadline=deadline_d,
         )
         db.add(row)
         db.flush()

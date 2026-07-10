@@ -12,6 +12,7 @@ import AssignmentStudentPicker from './pages/AssignmentStudentPicker';
 import AssignmentBoard from './pages/AssignmentBoard';
 import ScheduleGrid from './pages/ScheduleGrid';
 import DataImport from './pages/DataImport';
+import PrintStudentSchedules from './pages/PrintStudentSchedules';
 import ProtectedRoute from './components/ProtectedRoute';
 
 export default function App() {
@@ -28,6 +29,7 @@ export default function App() {
         <Route path="/admin/assignments" element={<ProtectedRoute roles={['admin']}><AssignmentStudentPicker /></ProtectedRoute>} />
         <Route path="/admin/assignments/:studentId" element={<ProtectedRoute roles={['admin']}><AssignmentBoard /></ProtectedRoute>} />
         <Route path="/admin/schedule-grid" element={<ProtectedRoute roles={['admin']}><ScheduleGrid /></ProtectedRoute>} />
+        <Route path="/admin/print" element={<ProtectedRoute roles={['admin']}><PrintStudentSchedules /></ProtectedRoute>} />
         <Route path="/import" element={<ProtectedRoute roles={['admin']}><DataImport /></ProtectedRoute>} />
       </Routes>
     </BrowserRouter>

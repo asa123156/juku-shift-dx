@@ -369,6 +369,20 @@ def create_student(name: str, school_level: str, grade_year: int) -> dict:
         return result
 
 
+def change_user_password(email: str, current_password: str, new_password: str) -> None:
+    """本人によるパスワード変更。現パスワードの検証に失敗したら 403。"""
+    from security import verify_password
+
+    users = _load_users()
+    user = next((u for u in users if u.get("email", "").lower() == email.lower()), None)
+    if user is None:
+        raise HTTPException(status_code=404, detail="アカウントが見つかりません")
+    if not verify_password(current_password, user.get("password", "")):
+        raise HTTPException(status_code=403, detail="現在のパスワードが正しくありません")
+    user["password"] = hash_password(new_password)
+    _save_users(users)
+
+
 def reset_student_password(student_id: int) -> dict:
     with _session() as db:
         row = db.get(StudentProfile, student_id)

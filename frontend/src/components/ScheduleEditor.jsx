@@ -51,6 +51,20 @@ function slotLabel(status, role = 'teacher') {
   return { text: '空き', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' };
 }
 
+export function formatDeadlineLabel(isoDate) {
+  if (!isoDate) return '';
+  const d = new Date(`${isoDate}T12:00:00`);
+  const day = ['日', '月', '火', '水', '木', '金', '土'][d.getDay()];
+  return `${d.getMonth() + 1}/${d.getDate()}(${day})`;
+}
+
+export function isDeadlineOverdue(isoDate) {
+  if (!isoDate) return false;
+  const today = new Date();
+  const todayIso = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+  return todayIso > isoDate;
+}
+
 export function PeriodBanner({
   periodName,
   periodStart,
@@ -58,16 +72,27 @@ export function PeriodBanner({
   periodStatus,
   scheduleRequested,
   schedulePublished,
+  submissionDeadline,
 }) {
   if (!periodName) return null;
   const range = formatPeriodRange(periodStart, periodEnd);
+  const showDeadline = submissionDeadline && periodStatus === 'COLLECTING' && !schedulePublished;
+  const overdue = showDeadline && isDeadlineOverdue(submissionDeadline);
   return (
     <div className="mb-4 p-4 bg-white border border-gray-200 rounded-2xl shadow-sm">
       <p className="text-xs text-gray-400 font-bold tracking-wide">対象講習</p>
       <p className="text-base font-bold text-gray-900 mt-1">{periodName}</p>
       {range && <p className="text-sm text-gray-500 mt-0.5">{range}</p>}
+      {showDeadline && (
+        <p className={`text-sm font-bold mt-1 ${overdue ? 'text-red-600' : 'text-gray-700'}`}>
+          提出期限: {formatDeadlineLabel(submissionDeadline)}
+        </p>
+      )}
       <div className="flex flex-wrap gap-2 mt-2">
         <span className="text-xs px-2 py-1 rounded-full bg-gray-100 text-gray-700 font-bold">{periodStatus}</span>
+        {overdue && (
+          <span className="text-xs px-2 py-1 rounded-full bg-red-100 text-red-700 font-bold">期限超過</span>
+        )}
         {scheduleRequested && !schedulePublished && (
           <span className="text-xs px-2 py-1 rounded-full bg-indigo-100 text-indigo-800 font-bold">提案書送付済み</span>
         )}
@@ -262,12 +287,12 @@ export function StudentSlotRow({
   const kindBadge = confirmedLesson ? lessonKindBadge(confirmedLesson.lesson_kind) : null;
 
   return (
-    <div className={`rounded-2xl border p-4 transition-all ${
+    <div className={`rounded-2xl border p-3 sm:p-4 transition-all ${
       changed ? 'border-amber-400 bg-amber-50/50 ring-2 ring-amber-200'
         : showAssignment ? 'bg-blue-50/60 border-blue-200'
           : 'border-gray-200 bg-white'
     }`}>
-      <div className="flex items-start justify-between gap-3">
+      <div className="flex items-start justify-between gap-2 sm:gap-3">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-sm font-bold text-gray-800">{period}コマ</span>
@@ -319,7 +344,7 @@ export function StudentSlotRow({
               type="button"
               disabled={disabled}
               onClick={() => onStatusChange('')}
-              className={`w-14 h-11 rounded-lg font-bold text-sm transition-all disabled:opacity-50 ${
+              className={`w-12 sm:w-14 h-11 rounded-lg font-bold text-sm transition-all disabled:opacity-50 ${
                 status === '' ? 'bg-emerald-500 text-white shadow-sm' : 'text-gray-500 hover:bg-gray-200'
               }`}
             >
@@ -329,7 +354,7 @@ export function StudentSlotRow({
               type="button"
               disabled={disabled}
               onClick={() => onStatusChange('×')}
-              className={`w-14 h-11 rounded-lg font-bold text-sm transition-all disabled:opacity-50 ${
+              className={`w-12 sm:w-14 h-11 rounded-lg font-bold text-sm transition-all disabled:opacity-50 ${
                 status === '×' ? 'bg-red-500 text-white shadow-sm' : 'text-gray-500 hover:bg-gray-200'
               }`}
             >
@@ -358,12 +383,12 @@ export function TimeSlotRow({
   const badge = slotLabel(status);
 
   return (
-    <div className={`rounded-2xl border p-4 transition-all ${
+    <div className={`rounded-2xl border p-3 sm:p-4 transition-all ${
       changed ? 'border-amber-400 bg-amber-50/50 ring-2 ring-amber-200' : 'border-gray-200 bg-white'
     }`}>
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <div className="flex items-center gap-2">
+      <div className="flex items-center justify-between gap-2 sm:gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2 flex-wrap">
             <span className="text-sm font-bold text-gray-800">{period}コマ</span>
             {changed && <span className="text-xs text-amber-700 font-bold">変更</span>}
           </div>
@@ -379,7 +404,7 @@ export function TimeSlotRow({
           )}
         </div>
         {readOnly ? (
-          <div className={`px-4 py-2 rounded-xl border text-sm font-bold ${
+          <div className={`shrink-0 px-3 sm:px-4 py-2 rounded-xl border text-sm font-bold ${
             confirmedLesson && (confirmedLesson.is_fixed || confirmedLesson.lesson_kind === '通常')
               ? 'bg-slate-100 text-slate-800 border-slate-300'
               : badge.cls
@@ -390,12 +415,12 @@ export function TimeSlotRow({
               : badge.text}
           </div>
         ) : (
-          <div className="flex bg-gray-100 rounded-xl p-1 gap-1">
+          <div className="flex bg-gray-100 rounded-xl p-1 gap-1 shrink-0">
             <button
               type="button"
               disabled={disabled}
               onClick={() => onStatusChange('')}
-              className={`w-16 h-11 rounded-lg font-bold text-sm transition-all disabled:opacity-50 ${
+              className={`w-12 sm:w-16 h-11 rounded-lg font-bold text-sm transition-all disabled:opacity-50 ${
                 status === '' ? 'bg-emerald-500 text-white shadow-sm' : 'text-gray-500 hover:bg-gray-200'
               }`}
             >
@@ -405,7 +430,7 @@ export function TimeSlotRow({
               type="button"
               disabled={disabled}
               onClick={() => onStatusChange('×')}
-              className={`w-16 h-11 rounded-lg font-bold text-sm transition-all disabled:opacity-50 ${
+              className={`w-12 sm:w-16 h-11 rounded-lg font-bold text-sm transition-all disabled:opacity-50 ${
                 status === '×' ? 'bg-red-500 text-white shadow-sm' : 'text-gray-500 hover:bg-gray-200'
               }`}
             >

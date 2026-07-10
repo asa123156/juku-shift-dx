@@ -351,6 +351,7 @@ def build_my_schedule(
         "period_end_date": period.end_date,
         "period_status": period.status,
         "period_kind": getattr(period, "period_kind", "CRAM"),
+        "submission_deadline": getattr(period, "submission_deadline", None),
         "schedule_requested": requested,
         "schedule_published": published,
         "submission_complete": submission_complete,

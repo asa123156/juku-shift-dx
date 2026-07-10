@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAdminSession } from '../hooks/useAdminSession';
 import { AdminSidebar } from '../components/AdminSidebar';
 import { WorkflowGuide, DEFAULT_WORKFLOW_STEPS } from '../components/WorkflowGuide';
+import { formatDeadlineLabel, isDeadlineOverdue } from '../components/ScheduleEditor';
 import { apiFetch } from '../utils/apiClient';
 
 function NameList({ items, emptyLabel, accent = 'gray' }) {
@@ -60,13 +61,17 @@ function StatusColumn({ title, count, subtitle, items, emptyLabel, accent }) {
   );
 }
 
-function RolePanel({ roleLabel, roleKey, data, openDays }) {
+function RolePanel({ roleLabel, roleKey, data, openDays, deadline }) {
   const proposal = data?.proposal_sent ?? [];
   const unsubmitted = data?.unsubmitted ?? [];
   const published = data?.schedule_published ?? [];
 
   const proposalTitle = '提案書送付済み';
   const proposalSub = '初回スケジュール表を送付済み';
+  const overdue = deadline && isDeadlineOverdue(deadline);
+  const unsubmittedSub = deadline
+    ? `提出期限 ${formatDeadlineLabel(deadline)}${overdue ? '（期限超過）' : ''}`
+    : '全開校日の提出が未完了';
 
   return (
     <section className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
@@ -88,7 +93,7 @@ function RolePanel({ roleLabel, roleKey, data, openDays }) {
         <StatusColumn
           title="未提出"
           count={unsubmitted.length}
-          subtitle="全開校日の提出が未完了"
+          subtitle={unsubmittedSub}
           items={unsubmitted}
           emptyLabel="全員提出済み"
           accent="red"
@@ -164,6 +169,23 @@ export default function AdminDashboard() {
     window.open(`/api/export/juku-schedule?period_id=${activePeriodId}`, '_blank');
   };
 
+  const [isBackingUp, setIsBackingUp] = useState(false);
+  const handleBackup = async () => {
+    setIsBackingUp(true);
+    setPeriodMessage(null);
+    setLoadError(null);
+    try {
+      const res = await apiFetch('/api/admin/backup', { method: 'POST' });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.detail || 'バックアップに失敗しました');
+      setPeriodMessage(data.message);
+    } catch (err) {
+      setLoadError(err.message);
+    } finally {
+      setIsBackingUp(false);
+    }
+  };
+
   if (!isReady) return null;
 
   return (
@@ -179,6 +201,12 @@ export default function AdminDashboard() {
             {activePeriod && (
               <p className="text-sm text-gray-600 mt-1">
                 {activePeriod.name}（{activePeriod.status}）
+                {activePeriod.submission_deadline && (
+                  <span className={`ml-2 font-bold ${isDeadlineOverdue(activePeriod.submission_deadline) ? 'text-red-600' : 'text-gray-700'}`}>
+                    提出期限 {formatDeadlineLabel(activePeriod.submission_deadline)}
+                    {isDeadlineOverdue(activePeriod.submission_deadline) && '（超過）'}
+                  </span>
+                )}
               </p>
             )}
           </div>
@@ -199,6 +227,14 @@ export default function AdminDashboard() {
             >
               時間割DL
             </button>
+            <button
+              type="button"
+              onClick={handleBackup}
+              disabled={isBackingUp}
+              className="px-4 py-2.5 text-sm bg-slate-600 hover:bg-slate-700 disabled:opacity-40 text-white rounded-lg font-bold"
+            >
+              {isBackingUp ? 'バックアップ中…' : 'バックアップ作成'}
+            </button>
           </div>
         </header>
 
@@ -214,12 +250,14 @@ export default function AdminDashboard() {
               roleKey="students"
               data={summary.students}
               openDays={summary.open_days}
+              deadline={activePeriod?.submission_deadline}
             />
             <RolePanel
               roleLabel="講師"
               roleKey="teachers"
               data={summary.teachers}
               openDays={summary.open_days}
+              deadline={activePeriod?.submission_deadline}
             />
           </div>
         )}

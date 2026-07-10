@@ -15,6 +15,7 @@ import {
   submitChangeProposal,
 } from '../components/ScheduleEditor';
 import { UserPhaseStepper } from '../components/UserPhaseStepper';
+import { PasswordChangeModal } from '../components/PasswordChangeModal';
 import {
   fetchScheduleContext,
   formatMonthLabel,
@@ -41,6 +42,7 @@ export default function StudentShift() {
   const [periodStart, setPeriodStart] = useState('');
   const [periodEnd, setPeriodEnd] = useState('');
   const [periodStatus, setPeriodStatus] = useState(null);
+  const [submissionDeadline, setSubmissionDeadline] = useState(null);
   const [scheduleRequested, setScheduleRequested] = useState(false);
   const [schedulePublished, setSchedulePublished] = useState(false);
   const [readonly, setReadonly] = useState(false);
@@ -48,6 +50,7 @@ export default function StudentShift() {
   const [timeSlots, setTimeSlots] = useState([]);
   const [pendingRequests, setPendingRequests] = useState([]);
 
+  const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [proposalMode, setProposalMode] = useState(false);
   const [proposalByDate, setProposalByDate] = useState({});
   const [proposalReason, setProposalReason] = useState('');
@@ -93,6 +96,7 @@ export default function StudentShift() {
       if (!res.ok) throw new Error('スケジュールの取得に失敗しました');
       const sched = await res.json();
       setPeriodStatus(sched.period_status);
+      setSubmissionDeadline(sched.submission_deadline ?? null);
       setPeriodName(sched.period_name ?? '');
       setPeriodStart(sched.period_start_date ?? '');
       setPeriodEnd(sched.period_end_date ?? '');
@@ -350,11 +354,12 @@ export default function StudentShift() {
     scheduleRequested && !schedulePublished && !readonly && submissionComplete && !proposalMode;
 
   return (
-    <div className="min-h-screen bg-slate-100 flex justify-center p-4 font-sans">
-      <div className="w-full max-w-lg bg-white rounded-3xl shadow-xl overflow-hidden flex flex-col min-h-[90vh]">
+    <div className="min-h-screen bg-slate-100 flex justify-center p-0 sm:p-4 font-sans">
+      <div className="w-full max-w-lg bg-white sm:rounded-3xl sm:shadow-xl overflow-hidden flex flex-col min-h-[100vh] sm:min-h-[90vh]">
         <header className="bg-gradient-to-br from-blue-700 to-blue-900 text-white px-5 pt-8 pb-5">
           <div className="flex items-center justify-between mb-4">
             <button type="button" onClick={() => { clearSession(); navigate('/'); }} className="text-sm bg-white/15 hover:bg-white/25 px-3 py-1.5 rounded-lg">← ログアウト</button>
+            <button type="button" onClick={() => setShowPasswordModal(true)} className="text-sm bg-white/15 hover:bg-white/25 px-3 py-1.5 rounded-lg">パスワード変更</button>
             {!proposalMode && canRequestChanges && (
               <button type="button" onClick={startProposal} className="text-sm bg-amber-400 hover:bg-amber-300 text-amber-950 px-3 py-1.5 rounded-lg font-bold">
                 変更の提案書作成
@@ -368,7 +373,7 @@ export default function StudentShift() {
           <p className="text-blue-200 text-sm mt-1">{teacherName}</p>
         </header>
 
-        <main className="flex-1 overflow-y-auto p-4 bg-slate-50">
+        <main className="flex-1 overflow-y-auto p-3 sm:p-4 bg-slate-50">
           {!isWaitingForFinal && (
             <>
           <PeriodBanner
@@ -376,6 +381,7 @@ export default function StudentShift() {
             periodStart={periodStart}
             periodEnd={periodEnd}
             periodStatus={periodStatus}
+            submissionDeadline={submissionDeadline}
             scheduleRequested={scheduleRequested}
             schedulePublished={schedulePublished}
           />
@@ -561,6 +567,7 @@ export default function StudentShift() {
           )}
         </footer>
       </div>
+      <PasswordChangeModal open={showPasswordModal} onClose={() => setShowPasswordModal(false)} />
     </div>
   );
 }

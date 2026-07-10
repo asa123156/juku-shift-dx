@@ -79,7 +79,7 @@ export default function AdminManage() {
   const [students, setStudents] = useState([]);
   const [teachers, setTeachers] = useState([]);
 
-  const [periodForm, setPeriodForm] = useState({ name: '', start_date: '', end_date: '', location_slug: 'hakutei' });
+  const [periodForm, setPeriodForm] = useState({ name: '', start_date: '', end_date: '', location_slug: 'hakutei', submission_deadline: '' });
   const [locationOptions, setLocationOptions] = useState([]);
   const [openDateSelection, setOpenDateSelection] = useState([]);
   const [studentForm, setStudentForm] = useState({ name: '', school_level: 'middle', grade_year: 2 });
@@ -172,12 +172,16 @@ export default function AdminManage() {
       const res = await apiFetch('/api/admin/periods', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...periodForm, closed_dates }),
+        body: JSON.stringify({
+          ...periodForm,
+          submission_deadline: periodForm.submission_deadline || null,
+          closed_dates,
+        }),
       });
       if (!res.ok) throw new Error(await parseApiError(res, '講習の作成に失敗しました'));
       const data = await res.json();
       setMessage(data.message);
-      setPeriodForm({ name: '', start_date: '', end_date: '', location_slug: periodForm.location_slug || 'hakutei' });
+      setPeriodForm({ name: '', start_date: '', end_date: '', location_slug: periodForm.location_slug || 'hakutei', submission_deadline: '' });
       setOpenDateSelection([]);
       await loadAll();
     } catch (err) {
@@ -435,6 +439,16 @@ export default function AdminManage() {
                 onChange={(e) => setPeriodForm({ ...periodForm, end_date: e.target.value })}
                 className="mt-1 w-full border rounded-lg px-3 py-2"
               />
+            </label>
+            <label className="block">
+              <span className="text-sm font-bold text-gray-600">提出期限（任意）</span>
+              <input
+                type="date"
+                value={periodForm.submission_deadline}
+                onChange={(e) => setPeriodForm({ ...periodForm, submission_deadline: e.target.value })}
+                className="mt-1 w-full border rounded-lg px-3 py-2"
+              />
+              <span className="text-xs text-gray-400">期限後も提出は可能（画面に「期限超過」と表示）</span>
             </label>
             {locationOptions.length > 0 && (
               <label className="block sm:col-span-2">

@@ -1,4 +1,6 @@
+import { useState } from 'react';
 import { clearSession } from '../utils/session';
+import { PasswordChangeModal } from './PasswordChangeModal';
 
 const NAV_ITEMS = [
   { path: '/admin', key: 'dashboard', step: null, label: 'ダッシュボード', sub: '進捗確認' },
@@ -7,9 +9,11 @@ const NAV_ITEMS = [
   { path: '/import', key: 'import', step: 2, label: 'Excel取込', sub: '任意' },
   { path: '/admin/schedule-grid', key: 'schedule-grid', step: 2, label: '時間割表', sub: '手入力も可' },
   { path: '/admin/assignments', key: 'assignments', step: '3-6', label: '割当・送付', sub: '提案→確定' },
+  { path: '/admin/print', key: 'print', step: null, label: '印刷用ビュー', sub: '生徒別時間割' },
 ];
 
 export function AdminSidebar({ navigate, current }) {
+  const [showPasswordModal, setShowPasswordModal] = useState(false);
   return (
     <div className="w-64 bg-gray-900 text-white p-6 flex flex-col shrink-0">
       <h1 className="text-2xl font-bold mb-2 text-blue-400 flex items-center gap-2">
@@ -40,11 +44,19 @@ export function AdminSidebar({ navigate, current }) {
       </nav>
       <button
         type="button"
+        onClick={() => setShowPasswordModal(true)}
+        className="text-gray-400 hover:text-white text-left text-sm mb-3"
+      >
+        パスワード変更
+      </button>
+      <button
+        type="button"
         onClick={() => { clearSession(); navigate('/'); }}
         className="text-gray-400 hover:text-white text-left text-sm"
       >
         ← ログアウト
       </button>
+      <PasswordChangeModal open={showPasswordModal} onClose={() => setShowPasswordModal(false)} />
     </div>
   );
 }
