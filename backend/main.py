@@ -3,8 +3,10 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
-from config import CORS_ALLOWED_ORIGINS
+from config import CORS_ALLOWED_ORIGINS, REPO_ROOT
 from database import init_db
 from routers import admin, auth, calendar, export, google, lessons, shifts
 
@@ -46,3 +48,17 @@ app.include_router(google.router)
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok", "version": "0.2.0"}
+
+
+# frontend/dist があれば同一オリジンで SPA を配信する（Vite dev サーバー利用時は不要）。
+FRONTEND_DIST = REPO_ROOT / "frontend" / "dist"
+
+if FRONTEND_DIST.is_dir():
+    app.mount("/assets", StaticFiles(directory=FRONTEND_DIST / "assets"), name="assets")
+
+    @app.get("/{full_path:path}", include_in_schema=False)
+    def spa_fallback(full_path: str) -> FileResponse:
+        candidate = FRONTEND_DIST / full_path
+        if full_path and ".." not in full_path and candidate.is_file():
+            return FileResponse(candidate)
+        return FileResponse(FRONTEND_DIST / "index.html")

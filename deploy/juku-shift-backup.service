@@ -1,0 +1,10 @@
+# 日次バックアップ（juku-shift-backup.timer から起動される）
+# 配置先: /etc/systemd/system/juku-shift-backup.service
+[Unit]
+Description=JUKU-SHIFT DX daily backup
+
+[Service]
+Type=oneshot
+User=ubuntu
+WorkingDirectory=/opt/juku-shift-dx/backend
+ExecStart=/opt/juku-shift-dx/backend/.venv/bin/python -m scripts.backup_data --keep 14

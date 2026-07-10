@@ -1,0 +1,11 @@
+# 毎日 4:00 (VM のタイムゾーン) にバックアップを実行
+# 配置先: /etc/systemd/system/juku-shift-backup.timer
+[Unit]
+Description=JUKU-SHIFT DX daily backup timer
+
+[Timer]
+OnCalendar=*-*-* 04:00:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

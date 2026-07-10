@@ -219,3 +219,7 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# JUKU-SHIFT DX: local runtime artifacts
+backend/backups/
+backend/.env.production

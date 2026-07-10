@@ -1,0 +1,17 @@
+# JUKU-SHIFT DX バックエンド (uvicorn) systemd サービス
+# 配置先: /etc/systemd/system/juku-shift.service
+[Unit]
+Description=JUKU-SHIFT DX (FastAPI/uvicorn)
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/opt/juku-shift-dx/backend
+EnvironmentFile=/opt/juku-shift-dx/backend/.env.production
+ExecStart=/opt/juku-shift-dx/backend/.venv/bin/uvicorn main:app --host 127.0.0.1 --port 8000
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

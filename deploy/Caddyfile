@@ -1,0 +1,6 @@
+# JUKU-SHIFT DX 用 Caddy 設定（HTTPS 自動取得のリバースプロキシ）
+# 配置先: /etc/caddy/Caddyfile
+# 「juku.example.com」を自分のドメインに置き換えること。
+juku.example.com {
+	reverse_proxy 127.0.0.1:8000
+}
