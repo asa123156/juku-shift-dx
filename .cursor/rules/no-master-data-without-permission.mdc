@@ -1,0 +1,28 @@
+---
+description: ユーザーの許可なく講習・生徒・講師を追加しない
+alwaysApply: true
+---
+
+# マスタデータ追加の制限
+
+ユーザーの**明示的な許可がない限り**、以下を追加・作成・変更しない。
+
+- **講習**（期間の新規作成、bootstrap、seed 追加）
+- **生徒**（アカウント・プロフィールの新規登録）
+- **講師**（アカウント・プロフィールの新規登録）
+
+## 例外
+
+テストの作成・修正・実行のためであれば、`backend/tests/` 内での追加は許可する。
+
+## 触らない例
+
+- `backend/data/users.json` への生徒・講師の追加
+- `backend/routers/admin.py` 経由のマスタ登録を前提としたデータ投入
+- `backend/scripts/generate_demo_data.py` の実行やデモデータ生成
+- `create_period` / `bootstrap_period_dashboards` による講習期間の新規作成
+- Excel インポートによる講師・生徒の自動追加
+
+## 作業時の確認
+
+マスタ追加が必要そうな作業に当たったら、実装前にユーザーへ確認する。

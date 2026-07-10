@@ -72,7 +72,7 @@
   },
   {
     "email": "teacher2@example.com",
-    "password": "tch-002-b48c",
+    "password": "tch-002-391e",
     "role": "teacher",
     "teacher_id": 2,
     "student_id": null,
@@ -81,11 +81,20 @@
   },
   {
     "email": "teacher3@example.com",
-    "password": "tch-003-25e7",
+    "password": "tch-003-1f16",
     "role": "teacher",
     "teacher_id": 3,
     "student_id": null,
     "name": "鈴木 先生",
+    "redirect": "/teacher"
+  },
+  {
+    "email": "teacher4@example.com",
+    "password": "tch-004-01f3",
+    "role": "teacher",
+    "teacher_id": 4,
+    "student_id": null,
+    "name": "テスト講師",
     "redirect": "/teacher"
   }
 ]
