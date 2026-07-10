@@ -1,10 +1,11 @@
-from fastapi import APIRouter, File, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 
+from dependencies import require_admin
 from schemas.import_schedule import JukuGridImportResponse, ScheduleCsvImportResponse
 from services.juku_grid_import import import_juku_grid_workbook, import_juku_grid_xlsx
 from services.schedule_csv_import import import_schedule_csv
 
-router = APIRouter(prefix="/api/import", tags=["import"])
+router = APIRouter(prefix="/api/import", tags=["import"], dependencies=[Depends(require_admin)])
 
 
 @router.post("/schedule", response_model=ScheduleCsvImportResponse)

@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from config import DATA_DIR
 from database import SessionLocal
+from security import hash_password
 from models import AdminOverride, Assignment as AssignmentRow
 from models import AssignmentRequest as AssignmentRequestRow
 from models import ClassSchedule as ClassScheduleRow
@@ -148,7 +149,10 @@ def _find_user_for_entity(users: list[dict], role: str, entity_id: int) -> dict 
     return None
 
 
-def _upsert_entity_user(role: str, entity_id: int, name: str) -> dict[str, str]:
+def _upsert_entity_user(
+    role: str, entity_id: int, name: str, *, force_new_password: bool = False
+) -> dict[str, str]:
+    """users.json にはハッシュのみ保存する。平文パスワードは発行直後だけ呼び出し元に返す。"""
     users = _load_users()
     id_key, redirect = _credential_keys(role)
     existing = _find_user_for_entity(users, role, entity_id)
@@ -157,10 +161,12 @@ def _upsert_entity_user(role: str, entity_id: int, name: str) -> dict[str, str]:
         existing["redirect"] = redirect
         if not existing.get("email"):
             existing["email"] = _default_login(role, entity_id)
-        if not existing.get("password"):
-            existing["password"] = _default_password(role, entity_id)
+        new_password = ""
+        if force_new_password or not existing.get("password"):
+            new_password = _default_password(role, entity_id)
+            existing["password"] = hash_password(new_password)
         _save_users(users)
-        return {"login_id": existing["email"], "password": existing["password"]}
+        return {"login_id": existing["email"], "password": new_password}
 
     taken = {str(u.get("email", "")).lower() for u in users}
     email = _default_login(role, entity_id)
@@ -174,7 +180,7 @@ def _upsert_entity_user(role: str, entity_id: int, name: str) -> dict[str, str]:
     password = _default_password(role, entity_id)
     user = {
         "email": email,
-        "password": password,
+        "password": hash_password(password),
         "role": role,
         "teacher_id": None,
         "student_id": None,
@@ -199,12 +205,13 @@ def _remove_entity_user(role: str, entity_id: int) -> None:
 
 
 def _credentials_for_entity(role: str, entity_id: int) -> dict[str, str]:
+    """一覧表示用。password は常に空文字（ハッシュは表示しない）。"""
     user = _find_user_for_entity(_load_users(), role, entity_id)
     if user is None:
         return {"login_id": "", "password": ""}
     return {
         "login_id": str(user.get("email", "")),
-        "password": str(user.get("password", "")),
+        "password": "",
     }
 
 
@@ -356,8 +363,21 @@ def create_student(name: str, school_level: str, grade_year: int) -> dict:
         db.add(row)
         db.commit()
         db.refresh(row)
-        _upsert_entity_user("student", row.id, row.name)
-        return _student_to_dict(row)
+        creds = _upsert_entity_user("student", row.id, row.name)
+        result = _student_to_dict(row)
+        result["password"] = creds["password"]
+        return result
+
+
+def reset_student_password(student_id: int) -> dict:
+    with _session() as db:
+        row = db.get(StudentProfile, student_id)
+        if row is None:
+            raise HTTPException(status_code=404, detail=f"Student id={student_id} not found")
+        creds = _upsert_entity_user("student", row.id, row.name, force_new_password=True)
+        result = _student_to_dict(row)
+        result["password"] = creds["password"]
+        return result
 
 
 def create_teacher(name: str, color: str | None = None) -> dict:
@@ -368,12 +388,24 @@ def create_teacher(name: str, color: str | None = None) -> dict:
         db.add(row)
         db.commit()
         db.refresh(row)
-        _upsert_entity_user("teacher", row.id, row.name)
+        creds = _upsert_entity_user("teacher", row.id, row.name)
         teacher = _teacher_to_dict(row)
+        teacher["password"] = creds["password"]
     from services.period_bootstrap import sync_teacher_to_all_period_dashboards
 
     sync_teacher_to_all_period_dashboards(teacher["id"])
     return teacher
+
+
+def reset_teacher_password(teacher_id: int) -> dict:
+    with _session() as db:
+        row = db.get(TeacherProfile, teacher_id)
+        if row is None:
+            raise HTTPException(status_code=404, detail=f"Teacher id={teacher_id} not found")
+        creds = _upsert_entity_user("teacher", row.id, row.name, force_new_password=True)
+        result = _teacher_to_dict(row)
+        result["password"] = creds["password"]
+        return result
 
 
 def update_student(student_id: int, name: str, school_level: str, grade_year: int) -> dict:

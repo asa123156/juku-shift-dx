@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAdminSession } from '../hooks/useAdminSession';
 import { AdminSidebar } from '../components/AdminSidebar';
+import { apiFetch } from '../utils/apiClient';
 
 const MODES = {
   juku: {
@@ -51,7 +52,7 @@ export default function DataImport() {
 
   useEffect(() => {
     if (!isReady) return;
-    fetch('/api/admin/periods')
+    apiFetch('/api/admin/periods')
       .then((r) => r.json())
       .then((data) => {
         setPeriods(data.periods ?? []);
@@ -61,7 +62,7 @@ export default function DataImport() {
         if (period?.start_date) setImportDate(period.start_date);
       })
       .catch(() => {});
-    fetch('/api/google/status')
+    apiFetch('/api/google/status')
       .then((r) => r.json())
       .then((data) => {
         setGoogleConfigured(data.configured);
@@ -117,7 +118,7 @@ export default function DataImport() {
         body.date = importDate;
         if (sheetName.trim()) body.sheet_name = sheetName.trim();
       }
-      const res = await fetch('/api/google/import', {
+      const res = await apiFetch('/api/google/import', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
@@ -145,7 +146,7 @@ export default function DataImport() {
     try {
       const formData = new FormData();
       formData.append('file', file);
-      const res = await fetch(buildImportUrl(), { method: 'POST', body: formData });
+      const res = await apiFetch(buildImportUrl(), { method: 'POST', body: formData });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.detail || 'インポートに失敗しました');
       setResult(body);

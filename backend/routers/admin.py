@@ -1,6 +1,7 @@
-from fastapi import APIRouter, File, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from fastapi.responses import Response
 
+from dependencies import get_current_user, require_admin
 from schemas.admin import (
     AdminConfirmRequest,
     AdminConfirmResponse,
@@ -109,7 +110,9 @@ from services.change_request_store import count_pending_requests, list_change_re
 from services.shift_store import ensure_teacher_exists
 from services.entity_store import get_student
 
-router = APIRouter(prefix="/api/admin", tags=["admin"])
+router = APIRouter(prefix="/api/admin", tags=["admin"], dependencies=[Depends(require_admin)])
+# 生徒・講師の自画面からも読む GET のみ、要ログイン止まりで公開する別ルーター。
+shared_router = APIRouter(prefix="/api/admin", tags=["admin"], dependencies=[Depends(get_current_user)])
 
 
 @router.get("/dashboard/summary")
@@ -356,7 +359,7 @@ def publish_all_schedules_to_members(body: PublishAllRequest) -> PublishAllRespo
     )
 
 
-@router.get("/change-requests", response_model=ChangeRequestListResponse)
+@shared_router.get("/change-requests", response_model=ChangeRequestListResponse)
 def get_change_requests(
     period_id: int = Query(..., ge=1),
     status: str | None = Query(None, pattern="^(PENDING|APPROVED|REJECTED)$"),
@@ -638,6 +641,13 @@ def remove_student(student_id: int) -> dict:
     return {"message": "生徒を削除しました"}
 
 
+@router.post("/students/{student_id}/reset-password", response_model=StudentProfile)
+def reset_student_password_endpoint(student_id: int) -> StudentProfile:
+    from services.entity_store import reset_student_password
+
+    return StudentProfile.model_validate(reset_student_password(student_id))
+
+
 @router.get("/teachers", response_model=TeacherListResponse)
 def get_teachers_master() -> TeacherListResponse:
     from services.entity_store import list_teachers
@@ -665,6 +675,13 @@ def remove_teacher(teacher_id: int) -> dict:
 
     delete_teacher(teacher_id)
     return {"message": "講師を削除しました"}
+
+
+@router.post("/teachers/{teacher_id}/reset-password", response_model=TeacherProfile)
+def reset_teacher_password_endpoint(teacher_id: int) -> TeacherProfile:
+    from services.entity_store import reset_teacher_password
+
+    return TeacherProfile.model_validate(reset_teacher_password(teacher_id))
 
 
 @router.post("/periods", response_model=PeriodResponse)

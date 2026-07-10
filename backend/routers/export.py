@@ -1,9 +1,10 @@
 from urllib.parse import quote
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query
 from fastapi.responses import Response
 from pydantic import BaseModel
 
+from dependencies import require_admin
 from services.juku_grid_export import (
     export_calendar_month_workbook,
     export_period_schedule_workbook,
@@ -13,7 +14,7 @@ from services.location_config import list_locations
 from services.period_store import get_period
 from services.proposal_export import export_period_proposals_xlsx, export_student_proposal_xlsx
 
-router = APIRouter(prefix="/api/export", tags=["export"])
+router = APIRouter(prefix="/api/export", tags=["export"], dependencies=[Depends(require_admin)])
 
 
 def _attachment_headers(filename: str) -> dict[str, str]:

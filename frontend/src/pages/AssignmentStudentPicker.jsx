@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAdminSession } from '../hooks/useAdminSession';
 import { AdminSidebar } from '../components/AdminSidebar';
+import { apiFetch } from '../utils/apiClient';
 
 const LEVEL_COLUMNS = [
   { key: 'elementary', title: '小学生', accent: 'bg-emerald-600' },
@@ -263,7 +264,7 @@ export default function AssignmentStudentPicker() {
     setIsLoading(true);
     setLoadError(null);
     try {
-      const res = await fetch(`/api/admin/assignments/sheets?period_id=${pid}`);
+      const res = await apiFetch(`/api/admin/assignments/sheets?period_id=${pid}`);
       if (!res.ok) throw new Error('生徒一覧の取得に失敗しました');
       setSheets(await res.json());
     } catch (err) {
@@ -275,7 +276,7 @@ export default function AssignmentStudentPicker() {
 
   useEffect(() => {
     if (!isReady) return;
-    fetch('/api/admin/periods')
+    apiFetch('/api/admin/periods')
       .then((r) => r.json())
       .then((data) => {
         setPeriods(data.periods ?? []);
@@ -319,7 +320,7 @@ export default function AssignmentStudentPicker() {
     setMessage(null);
     setLoadError(null);
     try {
-      const res = await fetch('/api/admin/assignments/publish-request', {
+      const res = await apiFetch('/api/admin/assignments/publish-request', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ period_id: periodId, student_id: studentId }),
@@ -341,7 +342,7 @@ export default function AssignmentStudentPicker() {
     setMessage(null);
     setLoadError(null);
     try {
-      const res = await fetch('/api/admin/assignments/publish-schedule', {
+      const res = await apiFetch('/api/admin/assignments/publish-schedule', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ period_id: periodId, student_id: studentId }),
@@ -363,7 +364,7 @@ export default function AssignmentStudentPicker() {
     setMessage(null);
     setLoadError(null);
     try {
-      const res = await fetch('/api/admin/assignments/publish-teacher-request', {
+      const res = await apiFetch('/api/admin/assignments/publish-teacher-request', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ period_id: periodId, teacher_id: teacherId }),
@@ -385,7 +386,7 @@ export default function AssignmentStudentPicker() {
     setMessage(null);
     setLoadError(null);
     try {
-      const res = await fetch('/api/admin/assignments/publish-teacher-schedule', {
+      const res = await apiFetch('/api/admin/assignments/publish-teacher-schedule', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ period_id: periodId, teacher_id: teacherId }),
@@ -417,7 +418,7 @@ export default function AssignmentStudentPicker() {
     setLoadError(null);
     try {
       for (const student of pendingStudents) {
-        const res = await fetch('/api/admin/assignments/publish-request', {
+        const res = await apiFetch('/api/admin/assignments/publish-request', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ period_id: periodId, student_id: student.id }),
@@ -426,7 +427,7 @@ export default function AssignmentStudentPicker() {
         if (!res.ok) throw new Error(data.detail || `「${student.name}」への送付に失敗しました`);
       }
       for (const teacher of pendingTeachers) {
-        const res = await fetch('/api/admin/assignments/publish-teacher-request', {
+        const res = await apiFetch('/api/admin/assignments/publish-teacher-request', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ period_id: periodId, teacher_id: teacher.id }),
@@ -449,7 +450,7 @@ export default function AssignmentStudentPicker() {
     setMessage(null);
     setLoadError(null);
     try {
-      const res = await fetch('/api/admin/assignments/publish-all', {
+      const res = await apiFetch('/api/admin/assignments/publish-all', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ period_id: periodId }),
@@ -472,7 +473,7 @@ export default function AssignmentStudentPicker() {
     setMessage(null);
     setLoadError(null);
     try {
-      const res = await fetch(`/api/admin/periods/${periodId}/status`, {
+      const res = await apiFetch(`/api/admin/periods/${periodId}/status`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: 'FINALIZED', force }),

@@ -66,9 +66,12 @@ def _reset_publish_and_change_requests() -> None:
 
 def run_tests() -> None:
     from main import app
+    from security import create_access_token
 
     _reset_data()
     client = TestClient(app)
+    token = create_access_token({"sub": "admin@example.com", "role": "admin", "name": "教室長"})
+    client.headers["Authorization"] = f"Bearer {token}"
 
     assert client.get("/health").json()["status"] == "ok"
 

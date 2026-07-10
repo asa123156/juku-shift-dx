@@ -11,6 +11,7 @@ from datetime import date, timedelta
 from pathlib import Path
 
 from config import DASHBOARDS_DIR, DATA_DIR
+from security import hash_password
 from services.slot_timing import SLOT_COUNT, SLOT_FIELDS, SLOT_NUMS, generate_time_slots
 
 WEEKDAY_JA = ["月", "火", "水", "木", "金", "土", "日"]
@@ -175,7 +176,7 @@ def build_users() -> list[dict]:
     users = [
         {
             "email": "teacher@example.com",
-            "password": "demo",
+            "password": hash_password("demo"),
             "role": "teacher",
             "teacher_id": 1,
             "name": "田中 先生",
@@ -183,7 +184,7 @@ def build_users() -> list[dict]:
         },
         {
             "email": "admin@example.com",
-            "password": "demo",
+            "password": hash_password("demo"),
             "role": "admin",
             "teacher_id": None,
             "student_id": None,
@@ -196,7 +197,7 @@ def build_users() -> list[dict]:
             users.append(
                 {
                     "email": "student@example.com",
-                    "password": "demo",
+                    "password": hash_password("demo"),
                     "role": "student",
                     "teacher_id": None,
                     "student_id": sid,
@@ -208,7 +209,7 @@ def build_users() -> list[dict]:
             users.append(
                 {
                     "email": f"student{sid}@example.com",
-                    "password": "demo",
+                    "password": hash_password("demo"),
                     "role": "student",
                     "teacher_id": None,
                     "student_id": sid,

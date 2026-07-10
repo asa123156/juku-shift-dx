@@ -1,11 +1,12 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query
 
+from dependencies import get_current_user
 from schemas.lessons import LessonRow
 from services.data_loader import load_lessons
 
-router = APIRouter(prefix="/api", tags=["lessons"])
+router = APIRouter(prefix="/api", tags=["lessons"], dependencies=[Depends(get_current_user)])
 
 
 @router.get("/lessons", response_model=list[LessonRow])

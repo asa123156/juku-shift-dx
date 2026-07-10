@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { useAdminSession } from '../hooks/useAdminSession';
 import { AdminSidebar } from '../components/AdminSidebar';
 import { DEFAULT_MATCH_RULES, MatchRulesPanel, collectSubjects } from '../components/MatchRulesPanel';
+import { apiFetch } from '../utils/apiClient';
 
 function familyName(fullName) {
   if (!fullName) return '';
@@ -272,7 +273,7 @@ export default function AssignmentBoard() {
     setIsLoading(true);
     setLoadError(null);
     try {
-      const res = await fetch(`/api/admin/assignments/sheets?period_id=${pid}`);
+      const res = await apiFetch(`/api/admin/assignments/sheets?period_id=${pid}`);
       if (!res.ok) throw new Error('スケジュールの取得に失敗しました');
       setSheets(await res.json());
     } catch (err) {
@@ -287,7 +288,7 @@ export default function AssignmentBoard() {
     if (!isReady) return;
     (async () => {
       try {
-        const periodsRes = await fetch('/api/admin/periods');
+        const periodsRes = await apiFetch('/api/admin/periods');
         if (!periodsRes.ok) throw new Error('期間の取得に失敗しました');
         const periodsData = await periodsRes.json();
         const pid = periodsData.active_period_id ?? periodsData.periods?.[0]?.id;
@@ -323,7 +324,7 @@ export default function AssignmentBoard() {
     setMessage(null);
     setLoadError(null);
     try {
-      const res = await fetch('/api/admin/auto-assign-period', {
+      const res = await apiFetch('/api/admin/auto-assign-period', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ period_id: periodId, rules: matchRules }),
@@ -352,7 +353,7 @@ export default function AssignmentBoard() {
     const req = pending[selectedRequestIdx];
     if (!req || !manualTarget) return;
     try {
-      const res = await fetch('/api/admin/assignments/manual', {
+      const res = await apiFetch('/api/admin/assignments/manual', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -382,7 +383,7 @@ export default function AssignmentBoard() {
     if (!periodId || !assignment) return;
     if (!window.confirm(`${assignment.student_name} の ${assignment.subject} 割当を解除しますか？`)) return;
     try {
-      const res = await fetch('/api/admin/assignments/cancel', {
+      const res = await apiFetch('/api/admin/assignments/cancel', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -412,7 +413,7 @@ export default function AssignmentBoard() {
     setMessage(null);
     setLoadError(null);
     try {
-      const res = await fetch('/api/admin/assignments/publish-schedule', {
+      const res = await apiFetch('/api/admin/assignments/publish-schedule', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ period_id: periodId, student_id: publishStudentId }),

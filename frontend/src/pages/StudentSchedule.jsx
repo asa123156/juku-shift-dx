@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { loadSession, clearSession } from '../utils/session';
+import { apiFetch } from '../utils/apiClient';
 import { useStudentSession } from '../hooks/useStudentSession';
 import {
   apiSlotsToState,
@@ -70,7 +71,7 @@ export default function StudentSchedule() {
   }, [session]);
 
   const loadPendingRequests = useCallback(async (pid, sid) => {
-    const res = await fetch(`/api/admin/change-requests?period_id=${pid}&status=PENDING`);
+    const res = await apiFetch(`/api/admin/change-requests?period_id=${pid}&status=PENDING`);
     if (!res.ok) return;
     const data = await res.json();
     setPendingRequests(
@@ -83,7 +84,7 @@ export default function StudentSchedule() {
     setError(null);
     try {
       const monthQuery = ctx ? monthScheduleQuery(ctx) : '';
-      const res = await fetch(
+      const res = await apiFetch(
         `/api/shifts/my-schedule?role=student&entity_id=${sid}&period_id=${pid}${monthQuery}`,
       );
       if (!res.ok) throw new Error('スケジュールの取得に失敗しました');
@@ -261,7 +262,7 @@ export default function StudentSchedule() {
         date,
         slots: stateToApiSlots(scheduleByDate[date] ?? EMPTY_SLOTS),
       }));
-      const res = await fetch('/api/shifts/bulk', {
+      const res = await apiFetch('/api/shifts/bulk', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -290,7 +291,7 @@ export default function StudentSchedule() {
     setIsSubmitting(true);
     setError(null);
     try {
-      const res = await fetch('/api/shifts/resubmit-request', {
+      const res = await apiFetch('/api/shifts/resubmit-request', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

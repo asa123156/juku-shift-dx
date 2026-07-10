@@ -1,5 +1,6 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 
+from dependencies import require_admin
 from schemas.google import (
     GoogleSheetExportRequest,
     GoogleSheetExportResponse,
@@ -10,7 +11,7 @@ from schemas.google import (
 from services.google_schedule_sync import export_to_google_sheet, import_from_google_sheet
 from services.google_sheets import get_service_account_email, is_google_configured
 
-router = APIRouter(prefix="/api/google", tags=["google"])
+router = APIRouter(prefix="/api/google", tags=["google"], dependencies=[Depends(require_admin)])
 
 
 @router.get("/status", response_model=GoogleStatusResponse)

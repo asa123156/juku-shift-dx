@@ -1,6 +1,8 @@
+import { apiFetch } from './apiClient';
+
 export async function fetchScheduleContext(date) {
   const query = date ? `?date=${encodeURIComponent(date)}` : '';
-  const res = await fetch(`/api/calendar/schedule-context${query}`);
+  const res = await apiFetch(`/api/calendar/schedule-context${query}`);
   if (!res.ok) {
     throw new Error('スケジュール情報の取得に失敗しました');
   }

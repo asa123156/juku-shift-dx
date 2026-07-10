@@ -335,8 +335,12 @@ def _run_single_workflow(client: TestClient, run_index: int, failures: list[str]
 @pytest.fixture(scope="module")
 def client():
     from main import app
+    from security import create_access_token
 
-    return TestClient(app)
+    test_client = TestClient(app)
+    token = create_access_token({"sub": "admin@example.com", "role": "admin", "name": "教室長"})
+    test_client.headers["Authorization"] = f"Bearer {token}"
+    return test_client
 
 
 def test_cram_workflow_ten_runs(client: TestClient):

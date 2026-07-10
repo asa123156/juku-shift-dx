@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAdminSession } from '../hooks/useAdminSession';
 import { AdminSidebar } from '../components/AdminSidebar';
 import { WorkflowGuide, DEFAULT_WORKFLOW_STEPS } from '../components/WorkflowGuide';
+import { apiFetch } from '../utils/apiClient';
 
 function NameList({ items, emptyLabel, accent = 'gray' }) {
   const border = {
@@ -118,7 +119,7 @@ export default function AdminDashboard() {
     if (!pid) return;
     setLoadError(null);
     try {
-      const res = await fetch(`/api/admin/dashboard/summary?period_id=${pid}`);
+      const res = await apiFetch(`/api/admin/dashboard/summary?period_id=${pid}`);
       if (!res.ok) throw new Error('ダッシュボードデータの取得に失敗しました');
       setSummary(await res.json());
     } catch (err) {
@@ -128,7 +129,7 @@ export default function AdminDashboard() {
   }, []);
 
   useEffect(() => {
-    fetch('/api/admin/periods')
+    apiFetch('/api/admin/periods')
       .then((r) => r.json())
       .then((data) => {
         setPeriods(data.periods ?? []);
@@ -141,7 +142,7 @@ export default function AdminDashboard() {
 
   const handleResolveChange = async (requestId, action) => {
     try {
-      const res = await fetch(`/api/admin/change-requests/${requestId}`, {
+      const res = await apiFetch(`/api/admin/change-requests/${requestId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action }),

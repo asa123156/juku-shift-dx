@@ -1,14 +1,15 @@
 from datetime import date
 from typing import Annotated
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
 
+from dependencies import get_current_user
 from services.academic_calendar import fiscal_year_for_date
 from services.fiscal_year_store import build_calendar_month, build_fiscal_year_summary
 from services.schedule_context import resolve_grid_period_ids, resolve_schedule_context
 
-router = APIRouter(prefix="/api/calendar", tags=["calendar"])
+router = APIRouter(prefix="/api/calendar", tags=["calendar"], dependencies=[Depends(get_current_user)])
 
 
 class ScheduleContextResponse(BaseModel):

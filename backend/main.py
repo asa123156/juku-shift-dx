@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from config import CORS_ALLOWED_ORIGINS
 from database import init_db
 from routers import admin, auth, calendar, export, google, lessons, shifts
 
@@ -25,7 +26,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=CORS_ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -35,6 +36,7 @@ app.include_router(auth.router)
 app.include_router(shifts.router)
 app.include_router(calendar.router)
 app.include_router(admin.router)
+app.include_router(admin.shared_router)
 app.include_router(lessons.router)
 app.include_router(import_router.router)
 app.include_router(export.router)

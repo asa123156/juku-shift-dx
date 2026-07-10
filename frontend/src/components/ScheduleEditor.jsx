@@ -1,3 +1,5 @@
+import { apiFetch } from '../utils/apiClient';
+
 const SLOT_NUMS = [1, 2, 3, 4, 5, 6];
 
 function isRegularAssignment(a) {
@@ -463,7 +465,7 @@ export async function submitChangeProposal({
   const results = [];
   const errors = [];
   for (const ch of changes) {
-    const res = await fetch('/api/shifts/change-requests', {
+    const res = await apiFetch('/api/shifts/change-requests', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({

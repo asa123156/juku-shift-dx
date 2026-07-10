@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAdminSession } from '../hooks/useAdminSession';
 import { AdminSidebar } from '../components/AdminSidebar';
+import { apiFetch } from '../utils/apiClient';
 
 const SUBJECT_PRESETS = ['数学', '算数', '理科', '物理', '化学', '国語', '社会', '英語'];
 
@@ -78,7 +79,7 @@ export default function StudentPlans() {
       setPeriodPlans([]);
       return;
     }
-    const planRes = await fetch(`/api/admin/periods/${pid}/student-plans`);
+    const planRes = await apiFetch(`/api/admin/periods/${pid}/student-plans`);
     if (!planRes.ok) throw new Error('希望データの取得に失敗しました');
     const planData = await planRes.json();
     setPeriodPlans(planData.students ?? []);
@@ -88,9 +89,9 @@ export default function StudentPlans() {
     setError(null);
     try {
       const [pRes, sRes, tRes] = await Promise.all([
-        fetch('/api/admin/periods'),
-        fetch('/api/admin/students'),
-        fetch('/api/admin/teachers'),
+        apiFetch('/api/admin/periods'),
+        apiFetch('/api/admin/students'),
+        apiFetch('/api/admin/teachers'),
       ]);
       if (!pRes.ok || !sRes.ok || !tRes.ok) throw new Error('データの取得に失敗しました');
       const pData = await pRes.json();
@@ -145,7 +146,7 @@ export default function StudentPlans() {
     setMessage(null);
     setError(null);
     try {
-      const res = await fetch(
+      const res = await apiFetch(
         `/api/admin/periods/${periodId}/students/${selectedStudentId}/plans`,
         {
           method: 'PUT',

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAdminSession } from '../hooks/useAdminSession';
 import { AdminSidebar } from '../components/AdminSidebar';
+import { apiFetch } from '../utils/apiClient';
 import { parseApiError } from '../utils/apiError';
 
 const LEVEL_OPTIONS = [
@@ -90,10 +91,10 @@ export default function AdminManage() {
     setError(null);
     try {
       const [pRes, pdRes, sRes, tRes] = await Promise.all([
-        fetch('/api/admin/periods'),
-        fetch('/api/admin/periods/deleted'),
-        fetch('/api/admin/students'),
-        fetch('/api/admin/teachers'),
+        apiFetch('/api/admin/periods'),
+        apiFetch('/api/admin/periods/deleted'),
+        apiFetch('/api/admin/students'),
+        apiFetch('/api/admin/teachers'),
       ]);
       if (!pRes.ok) throw new Error(await parseApiError(pRes, '講習一覧の取得に失敗しました'));
       if (!sRes.ok) throw new Error(await parseApiError(sRes, '生徒一覧の取得に失敗しました'));
@@ -108,7 +109,7 @@ export default function AdminManage() {
       setActivePeriodId(pid);
       setStudents(sData.students ?? []);
       setTeachers(tData.teachers ?? []);
-      fetch('/api/export/locations')
+      apiFetch('/api/export/locations')
         .then((r) => r.json())
         .then((data) => {
           const locs = data.locations ?? [];
@@ -168,7 +169,7 @@ export default function AdminManage() {
     }
     const closed_dates = periodCandidates.filter((d) => !effectiveOpen.includes(d));
     try {
-      const res = await fetch('/api/admin/periods', {
+      const res = await apiFetch('/api/admin/periods', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...periodForm, closed_dates }),
@@ -194,7 +195,7 @@ export default function AdminManage() {
     setMessage(null);
     setError(null);
     try {
-      const res = await fetch(`/api/admin/periods/${periodId}/activate`, { method: 'PATCH' });
+      const res = await apiFetch(`/api/admin/periods/${periodId}/activate`, { method: 'PATCH' });
       if (!res.ok) throw new Error('講習の選択に失敗しました');
       const data = await res.json();
       setMessage(data.message);
@@ -209,7 +210,7 @@ export default function AdminManage() {
     setMessage(null);
     setError(null);
     try {
-      const res = await fetch(`/api/admin/periods/${period.id}`, { method: 'DELETE' });
+      const res = await apiFetch(`/api/admin/periods/${period.id}`, { method: 'DELETE' });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.detail || '講習の削除に失敗しました');
       setMessage(data.message || `講習「${period.name}」を削除しました`);
@@ -223,7 +224,7 @@ export default function AdminManage() {
     setMessage(null);
     setError(null);
     try {
-      const res = await fetch(`/api/admin/periods/${period.id}/restore`, { method: 'PATCH' });
+      const res = await apiFetch(`/api/admin/periods/${period.id}/restore`, { method: 'PATCH' });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.detail || '講習の復元に失敗しました');
       setMessage(data.message || `講習「${period.name}」を復元しました`);
@@ -239,7 +240,7 @@ export default function AdminManage() {
     setError(null);
     try {
       const isEdit = editingStudentId != null;
-      const res = await fetch(
+      const res = await apiFetch(
         isEdit ? `/api/admin/students/${editingStudentId}` : '/api/admin/students',
         {
           method: isEdit ? 'PATCH' : 'POST',
@@ -270,12 +271,26 @@ export default function AdminManage() {
     resetTeacherForm();
   };
 
+  const handleResetStudentPassword = async (s) => {
+    if (!window.confirm(`「${s.name}」のパスワードを再発行しますか？`)) return;
+    setMessage(null);
+    setError(null);
+    try {
+      const res = await apiFetch(`/api/admin/students/${s.id}/reset-password`, { method: 'POST' });
+      if (!res.ok) throw new Error(await parseApiError(res, 'パスワードの再発行に失敗しました'));
+      const data = await res.json();
+      setMessage(`生徒「${data.name}」のパスワードを再発行しました（ID: ${data.login_id || '-'} / PW: ${data.password || '-'}）`);
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
   const handleDeleteStudent = async (s) => {
     if (!window.confirm(`「${s.name}」を削除しますか？\n割当・希望データも削除されます。`)) return;
     setMessage(null);
     setError(null);
     try {
-      const res = await fetch(`/api/admin/students/${s.id}`, { method: 'DELETE' });
+      const res = await apiFetch(`/api/admin/students/${s.id}`, { method: 'DELETE' });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         throw new Error(body.detail || '生徒の削除に失敗しました');
@@ -294,7 +309,7 @@ export default function AdminManage() {
     setError(null);
     try {
       const isEdit = editingTeacherId != null;
-      const res = await fetch(
+      const res = await apiFetch(
         isEdit ? `/api/admin/teachers/${editingTeacherId}` : '/api/admin/teachers',
         {
           method: isEdit ? 'PATCH' : 'POST',
@@ -325,12 +340,26 @@ export default function AdminManage() {
     resetStudentForm();
   };
 
+  const handleResetTeacherPassword = async (t) => {
+    if (!window.confirm(`「${t.name}」のパスワードを再発行しますか？`)) return;
+    setMessage(null);
+    setError(null);
+    try {
+      const res = await apiFetch(`/api/admin/teachers/${t.id}/reset-password`, { method: 'POST' });
+      if (!res.ok) throw new Error(await parseApiError(res, 'パスワードの再発行に失敗しました'));
+      const data = await res.json();
+      setMessage(`講師「${data.name}」のパスワードを再発行しました（ID: ${data.login_id || '-'} / PW: ${data.password || '-'}）`);
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
   const handleDeleteTeacher = async (t) => {
     if (!window.confirm(`「${t.name}」を削除しますか？`)) return;
     setMessage(null);
     setError(null);
     try {
-      const res = await fetch(`/api/admin/teachers/${t.id}`, { method: 'DELETE' });
+      const res = await apiFetch(`/api/admin/teachers/${t.id}`, { method: 'DELETE' });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         throw new Error(body.detail || '講師の削除に失敗しました');
@@ -580,10 +609,10 @@ export default function AdminManage() {
                           <span className="font-medium text-gray-800">{s.name}</span>
                           <p className="text-xs text-gray-500 mt-0.5">
                             ID: <span className="font-mono">{s.login_id || '-'}</span>
-                            {' '} / PW: <span className="font-mono">{s.password || '-'}</span>
                           </p>
                         </div>
                         <div className="flex gap-2 shrink-0">
+                          <button type="button" onClick={() => handleResetStudentPassword(s)} className="text-xs font-bold text-emerald-600 hover:underline">PW再発行</button>
                           <button type="button" onClick={() => handleEditStudent(s)} className="text-xs font-bold text-blue-600 hover:underline">編集</button>
                           <button type="button" onClick={() => handleDeleteStudent(s)} className="text-xs font-bold text-red-600 hover:underline">削除</button>
                         </div>
@@ -621,11 +650,11 @@ export default function AdminManage() {
                       <p className="font-medium text-gray-800">{t.name}</p>
                       <p className="text-xs text-gray-500 mt-0.5">
                         ID: <span className="font-mono">{t.login_id || '-'}</span>
-                        {' '} / PW: <span className="font-mono">{t.password || '-'}</span>
                       </p>
                     </div>
                   </div>
                   <div className="flex gap-2">
+                    <button type="button" onClick={() => handleResetTeacherPassword(t)} className="text-xs font-bold text-emerald-600 hover:underline">PW再発行</button>
                     <button type="button" onClick={() => handleEditTeacher(t)} className="text-xs font-bold text-blue-600 hover:underline">編集</button>
                     <button type="button" onClick={() => handleDeleteTeacher(t)} className="text-xs font-bold text-red-600 hover:underline">削除</button>
                   </div>

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAdminSession } from '../hooks/useAdminSession';
 import { AdminSidebar } from '../components/AdminSidebar';
+import { apiFetch } from '../utils/apiClient';
 import { parseApiError } from '../utils/apiError';
 
 const WEEKDAY_JA = ['日', '月', '火', '水', '木', '金', '土'];
@@ -273,7 +274,7 @@ export default function ScheduleGrid() {
     setIsLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/admin/assignments/grid?date=${encodeURIComponent(date)}`);
+      const res = await apiFetch(`/api/admin/assignments/grid?date=${encodeURIComponent(date)}`);
       if (!res.ok) throw new Error(await parseApiError(res, '時間割の取得に失敗しました'));
       const data = await res.json();
       setGrid(data);
@@ -299,7 +300,7 @@ export default function ScheduleGrid() {
 
   useEffect(() => {
     if (!isReady) return;
-    fetch('/api/admin/students')
+    apiFetch('/api/admin/students')
       .then((r) => r.json())
       .then((data) => setStudents(data.students ?? []))
       .catch(() => {});
@@ -339,7 +340,7 @@ export default function ScheduleGrid() {
     setSavingKey(key);
     setError(null);
     try {
-      const res = await fetch('/api/admin/assignments/grid/capacity', {
+      const res = await apiFetch('/api/admin/assignments/grid/capacity', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ date, teacher_id: teacherId, slot, max_lanes: maxLanes }),
@@ -362,7 +363,7 @@ export default function ScheduleGrid() {
     setSavingKey(key);
     setError(null);
     try {
-      const res = await fetch('/api/admin/assignments/manual', {
+      const res = await apiFetch('/api/admin/assignments/manual', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -402,7 +403,7 @@ export default function ScheduleGrid() {
       : `${assignment.student_name} の ${assignment.subject}`;
     if (!window.confirm(`${label} を解除しますか？`)) return;
     try {
-      const res = await fetch('/api/admin/assignments/cancel', {
+      const res = await apiFetch('/api/admin/assignments/cancel', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

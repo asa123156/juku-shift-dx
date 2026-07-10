@@ -1,8 +1,9 @@
 from typing import Annotated
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from config import DEFAULT_SHIFT_DATE
+from dependencies import CurrentUser, assert_self_or_admin, get_current_user
 from schemas.admin import ShiftDatesResponse, TeacherListItem
 from schemas.change_request import (
     ChangeRequestCreateRequest,
@@ -39,7 +40,7 @@ from schemas.period import BulkShiftSubmitRequest, BulkShiftSubmitResponse, MySc
 from services.change_request_store import create_change_request, create_resubmit_request
 from services.slot_timing import SLOT_NUMS
 
-router = APIRouter(prefix="/api", tags=["shifts"])
+router = APIRouter(prefix="/api", tags=["shifts"], dependencies=[Depends(get_current_user)])
 
 
 def _period_meta(iso_date: str) -> dict:
@@ -82,9 +83,11 @@ def get_shifts(
 
 @router.get("/shifts/me", response_model=TeacherShiftSubmissionResponse)
 def get_my_shift(
+    current_user: Annotated[CurrentUser, Depends(get_current_user)],
     teacher_id: Annotated[int, Query(ge=1, description="ログイン講師ID")],
     date: Annotated[str | None, Query(description="対象日 YYYY-MM-DD")] = None,
 ) -> TeacherShiftSubmissionResponse:
+    assert_self_or_admin(current_user, "teacher", teacher_id)
     resolved = resolve_shift_date(date)
     period = find_period_for_date(resolved)
     if period is not None:
@@ -107,12 +110,14 @@ def get_my_shift(
 
 @router.get("/shifts/my-schedule", response_model=MyScheduleResponse)
 def get_my_schedule(
+    current_user: Annotated[CurrentUser, Depends(get_current_user)],
     role: Annotated[str, Query(pattern="^(teacher|student)$")],
     entity_id: Annotated[int, Query(ge=1)],
     period_id: Annotated[int, Query(ge=1)],
     calendar_year: Annotated[int | None, Query(ge=2000, le=2100)] = None,
     month: Annotated[int | None, Query(ge=1, le=12)] = None,
 ) -> MyScheduleResponse:
+    assert_self_or_admin(current_user, role, entity_id)
     payload = build_my_schedule(
         role,
         entity_id,
@@ -124,7 +129,11 @@ def get_my_schedule(
 
 
 @router.post("/shifts", response_model=ShiftSubmitResponse)
-def submit_shifts(body: ShiftSubmitRequest) -> ShiftSubmitResponse:
+def submit_shifts(
+    body: ShiftSubmitRequest,
+    current_user: Annotated[CurrentUser, Depends(get_current_user)],
+) -> ShiftSubmitResponse:
+    assert_self_or_admin(current_user, "teacher", body.teacher_id)
     resolve_shift_date(body.date)
     period = find_period_for_date(body.date)
     if period is not None:
@@ -163,7 +172,11 @@ def submit_shifts(body: ShiftSubmitRequest) -> ShiftSubmitResponse:
 
 
 @router.patch("/shifts", response_model=ShiftSubmitResponse)
-def patch_shift_slot(body: ShiftSlotUpdateRequest) -> ShiftSubmitResponse:
+def patch_shift_slot(
+    body: ShiftSlotUpdateRequest,
+    current_user: Annotated[CurrentUser, Depends(get_current_user)],
+) -> ShiftSubmitResponse:
+    assert_self_or_admin(current_user, "teacher", body.teacher_id)
     resolve_shift_date(body.date)
     period = find_period_for_date(body.date)
     if period is not None:
@@ -186,7 +199,11 @@ def patch_shift_slot(body: ShiftSlotUpdateRequest) -> ShiftSubmitResponse:
 
 
 @router.patch("/shifts/bulk", response_model=BulkShiftSubmitResponse)
-def bulk_submit_shifts(body: BulkShiftSubmitRequest) -> BulkShiftSubmitResponse:
+def bulk_submit_shifts(
+    body: BulkShiftSubmitRequest,
+    current_user: Annotated[CurrentUser, Depends(get_current_user)],
+) -> BulkShiftSubmitResponse:
+    assert_self_or_admin(current_user, body.role, body.entity_id)
     saved = bulk_save_submissions(
         body.role,
         body.entity_id,
@@ -203,8 +220,12 @@ def bulk_submit_shifts(body: BulkShiftSubmitRequest) -> BulkShiftSubmitResponse:
 
 
 @router.post("/shifts/change-requests", response_model=ChangeRequestCreateResponse)
-def submit_change_request(body: ChangeRequestCreateRequest) -> ChangeRequestCreateResponse:
+def submit_change_request(
+    body: ChangeRequestCreateRequest,
+    current_user: Annotated[CurrentUser, Depends(get_current_user)],
+) -> ChangeRequestCreateResponse:
     """送付済みスケジュールの変更申請（教室長承認が必要）。"""
+    assert_self_or_admin(current_user, body.role, body.entity_id)
     row = create_change_request(
         body.period_id,
         body.role,
@@ -221,8 +242,12 @@ def submit_change_request(body: ChangeRequestCreateRequest) -> ChangeRequestCrea
 
 
 @router.post("/shifts/resubmit-request", response_model=ResubmitRequestCreateResponse)
-def submit_resubmit_request(body: ResubmitRequestCreateRequest) -> ResubmitRequestCreateResponse:
+def submit_resubmit_request(
+    body: ResubmitRequestCreateRequest,
+    current_user: Annotated[CurrentUser, Depends(get_current_user)],
+) -> ResubmitRequestCreateResponse:
     """確定前のスケジュール変更申請（教室長承認後に再提出）。"""
+    assert_self_or_admin(current_user, body.role, body.entity_id)
     row = create_resubmit_request(
         body.period_id,
         body.role,

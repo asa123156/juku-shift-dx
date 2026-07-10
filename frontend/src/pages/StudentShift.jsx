@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { loadSession, clearSession } from '../utils/session';
+import { apiFetch } from '../utils/apiClient';
 import {
   apiSlotsToState,
   EMPTY_SLOTS,
@@ -73,7 +74,7 @@ export default function StudentShift() {
   }, [navigate]);
 
   const loadPendingRequests = useCallback(async (pid, tid) => {
-    const res = await fetch(`/api/admin/change-requests?period_id=${pid}&status=PENDING`);
+    const res = await apiFetch(`/api/admin/change-requests?period_id=${pid}&status=PENDING`);
     if (!res.ok) return;
     const data = await res.json();
     setPendingRequests(
@@ -86,7 +87,7 @@ export default function StudentShift() {
     setError(null);
     try {
       const monthQuery = ctx ? monthScheduleQuery(ctx) : '';
-      const res = await fetch(
+      const res = await apiFetch(
         `/api/shifts/my-schedule?role=teacher&entity_id=${tid}&period_id=${pid}${monthQuery}`,
       );
       if (!res.ok) throw new Error('スケジュールの取得に失敗しました');
@@ -250,7 +251,7 @@ export default function StudentShift() {
     setScheduleByDate((m) => ({ ...m, [selectedDate]: { ...daySlots, [slotNum]: next } }));
     setIsSaving(true);
     try {
-      const res = await fetch('/api/shifts', {
+      const res = await apiFetch('/api/shifts', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -281,7 +282,7 @@ export default function StudentShift() {
         date,
         slots: stateToApiSlots(scheduleByDate[date] ?? EMPTY_SLOTS),
       }));
-      const res = await fetch('/api/shifts/bulk', {
+      const res = await apiFetch('/api/shifts/bulk', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -310,7 +311,7 @@ export default function StudentShift() {
     setIsSubmitting(true);
     setError(null);
     try {
-      const res = await fetch('/api/shifts/resubmit-request', {
+      const res = await apiFetch('/api/shifts/resubmit-request', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
