@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { periodStatusLabel } from '../components/ScheduleEditor';
 import { useNavigate } from 'react-router-dom';
 import { useAdminSession } from '../hooks/useAdminSession';
 import { AdminSidebar } from '../components/AdminSidebar';
@@ -201,7 +202,7 @@ export default function DataImport() {
                   className="mt-1 w-full border rounded-lg px-3 py-2"
                 >
                   {periods.map((p) => (
-                    <option key={p.id} value={p.id}>{p.name} ({p.status})</option>
+                    <option key={p.id} value={p.id}>{p.name}（{periodStatusLabel(p.status)}）</option>
                   ))}
                 </select>
               </label>

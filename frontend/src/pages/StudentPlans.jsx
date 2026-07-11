@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { periodStatusLabel } from '../components/ScheduleEditor';
 import { useNavigate } from 'react-router-dom';
 import { useAdminSession } from '../hooks/useAdminSession';
 import { AdminSidebar } from '../components/AdminSidebar';
@@ -219,7 +220,7 @@ export default function StudentPlans() {
                 {periods.length === 0 && <option value="">講習がありません</option>}
                 {periods.map((p) => (
                   <option key={p.id} value={p.id}>
-                    {p.name}（{p.status}）
+                    {p.name}（{periodStatusLabel(p.status)}）
                   </option>
                 ))}
               </select>

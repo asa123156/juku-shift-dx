@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { loadSession, clearSession } from '../utils/session';
 import { apiFetch } from '../utils/apiClient';
+import { confirmDialog } from '../utils/confirmDialog';
 import { useStudentSession } from '../hooks/useStudentSession';
 import {
   apiSlotsToState,
@@ -64,6 +65,24 @@ export default function StudentSchedule() {
   const [resubmitPending, setResubmitPending] = useState(false);
   const [error, setError] = useState(null);
   const [message, setMessage] = useState(null);
+
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+
+  useEffect(() => {
+    if (!hasUnsavedChanges) return undefined;
+    const onBeforeUnload = (e) => {
+      e.preventDefault();
+      e.returnValue = '';
+    };
+    window.addEventListener('beforeunload', onBeforeUnload);
+    return () => window.removeEventListener('beforeunload', onBeforeUnload);
+  }, [hasUnsavedChanges]);
+
+  const handleLogout = async () => {
+    if (!(await confirmDialog({ title: 'ログアウトしますか？', message: '提出していない変更は保存されません。', confirmLabel: 'ログアウト' }))) return;
+    clearSession();
+    navigate('/');
+  };
 
   const canRequestChanges = readonly && (schedulePublished || periodStatus === 'FINALIZED');
 
@@ -189,6 +208,7 @@ export default function StudentSchedule() {
   };
 
   const cancelProposal = () => {
+    setHasUnsavedChanges(false);
     setProposalMode(false);
     setProposalByDate({});
     setProposalReason('');
@@ -204,6 +224,7 @@ export default function StudentSchedule() {
     const locked = lockedByDate[selectedDate]?.[String(slotNum)];
     if (locked) return;
     setSubmitted(false);
+    setHasUnsavedChanges(true);
     setScheduleByDate((prev) => ({
       ...prev,
       [selectedDate]: {
@@ -215,6 +236,7 @@ export default function StudentSchedule() {
 
   const handleProposalSlotChange = (slotNum, symbol) => {
     if (!selectedDate) return;
+    setHasUnsavedChanges(true);
     setProposalByDate((prev) => ({
       ...prev,
       [selectedDate]: {
@@ -248,6 +270,7 @@ export default function StudentSchedule() {
           : `変更提案書を ${results.length} 件送信しました。教室長の承認をお待ちください。`,
       );
       setProposalMode(false);
+      setHasUnsavedChanges(false);
       await loadPendingRequests(periodId, studentId);
     } catch (err) {
       setError(err.message);
@@ -282,6 +305,7 @@ export default function StudentSchedule() {
       }
       setMessage((await res.json()).message);
       setSubmitted(true);
+      setHasUnsavedChanges(false);
       setSubmissionComplete(true);
     } catch (err) {
       setError(err.message);
@@ -337,7 +361,7 @@ export default function StudentSchedule() {
       <div className="w-full max-w-lg bg-white sm:rounded-3xl sm:shadow-xl overflow-hidden flex flex-col min-h-[100vh] sm:min-h-[90vh]">
         <header className="bg-gradient-to-br from-emerald-700 to-emerald-900 text-white px-5 pt-8 pb-5">
           <div className="flex items-center justify-between mb-4">
-            <button type="button" onClick={() => { clearSession(); navigate('/'); }} className="text-sm bg-white/15 hover:bg-white/25 px-3 py-1.5 rounded-lg">← ログアウト</button>
+            <button type="button" onClick={handleLogout} className="text-sm bg-white/15 hover:bg-white/25 px-3 py-1.5 rounded-lg">ログアウト</button>
             <button type="button" onClick={() => setShowPasswordModal(true)} className="text-sm bg-white/15 hover:bg-white/25 px-3 py-1.5 rounded-lg">パスワード変更</button>
             {!proposalMode && canRequestChanges && (
               <button type="button" onClick={startProposal} className="text-sm bg-amber-400 hover:bg-amber-300 text-amber-950 px-3 py-1.5 rounded-lg font-bold">

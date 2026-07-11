@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { clearSession } from '../utils/session';
 import { PasswordChangeModal } from './PasswordChangeModal';
+import { confirmDialog } from '../utils/confirmDialog';
 
 const NAV_ITEMS = [
   { path: '/admin', key: 'dashboard', step: null, label: 'ダッシュボード', sub: '進捗確認' },
@@ -32,13 +33,13 @@ export function AdminSidebar({ navigate, current }) {
           >
             <div className="flex items-center gap-2">
               {item.step && (
-                <span className="text-[10px] font-bold bg-gray-700 text-gray-300 px-1.5 py-0.5 rounded">
+                <span className="text-xs font-bold bg-gray-700 text-gray-300 px-1.5 py-0.5 rounded">
                   {item.step}
                 </span>
               )}
               <span className={current === item.key ? 'text-white' : ''}>{item.label}</span>
             </div>
-            <p className="text-[10px] text-gray-500 mt-0.5 ml-0">{item.sub}</p>
+            <p className="text-xs text-gray-500 mt-0.5 ml-0">{item.sub}</p>
           </button>
         ))}
       </nav>
@@ -51,10 +52,14 @@ export function AdminSidebar({ navigate, current }) {
       </button>
       <button
         type="button"
-        onClick={() => { clearSession(); navigate('/'); }}
+        onClick={async () => {
+          if (!(await confirmDialog({ title: 'ログアウトしますか？', confirmLabel: 'ログアウト' }))) return;
+          clearSession();
+          navigate('/');
+        }}
         className="text-gray-400 hover:text-white text-left text-sm"
       >
-        ← ログアウト
+        ログアウト
       </button>
       <PasswordChangeModal open={showPasswordModal} onClose={() => setShowPasswordModal(false)} />
     </div>

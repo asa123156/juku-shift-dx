@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAdminSession } from '../hooks/useAdminSession';
 import { AdminSidebar } from '../components/AdminSidebar';
 import { apiFetch } from '../utils/apiClient';
+import { confirmDialog } from '../utils/confirmDialog';
 
 const LEVEL_COLUMNS = [
   { key: 'elementary', title: '小学生', accent: 'bg-emerald-600' },
@@ -89,17 +90,17 @@ function TeacherCard({ teacher, onPublishRequest, onPublishFinal, requesting, pu
         </button>
       )}
       {!teacher.schedule_requested && !teacher.schedule_published && (
-        <p className="mt-2 text-[11px] text-indigo-700 font-bold">
+        <p className="mt-2 text-xs text-indigo-700 font-bold">
           まず提案書を送付して回答を集めてください
         </p>
       )}
       {teacher.schedule_requested && !teacher.schedule_published && (
-        <p className="mt-2 text-[11px] text-indigo-700 font-bold">
+        <p className="mt-2 text-xs text-indigo-700 font-bold">
           提案書送付済み（講師は回答可能）
         </p>
       )}
       {teacher.schedule_published && (
-        <p className="mt-2 text-[11px] text-blue-700 font-bold">
+        <p className="mt-2 text-xs text-blue-700 font-bold">
           講師画面にスケジュールを送付済みです
         </p>
       )}
@@ -183,22 +184,22 @@ function StudentCard({ student, onOpen, onPublishRequest, onPublishFinal, reques
         </button>
       )}
       {!student.schedule_requested && !student.schedule_published && (
-        <p className="mt-2 text-[11px] text-indigo-700 font-bold">
+        <p className="mt-2 text-xs text-indigo-700 font-bold">
           まず提案書を送付して回答を集めてください
         </p>
       )}
       {student.pending_count > 0 && !student.schedule_published && (
-        <p className="mt-2 text-[11px] text-amber-700 font-bold">
+        <p className="mt-2 text-xs text-amber-700 font-bold">
           未割当をすべて埋めてから確定できます
         </p>
       )}
       {student.schedule_published && (
-        <p className="mt-2 text-[11px] text-blue-700 font-bold">
+        <p className="mt-2 text-xs text-blue-700 font-bold">
           生徒画面にスケジュールを送付済みです
         </p>
       )}
       {student.schedule_requested && !student.schedule_published && (
-        <p className="mt-2 text-[11px] text-indigo-700 font-bold">
+        <p className="mt-2 text-xs text-indigo-700 font-bold">
           提案書送付済み（生徒は回答可能）
         </p>
       )}
@@ -411,7 +412,7 @@ export default function AssignmentStudentPicker() {
       return;
     }
     const label = `生徒 ${pendingStudents.length} 名・講師 ${pendingTeachers.length} 名`;
-    if (!window.confirm(`${label}に提案書をまとめて送付しますか？`)) return;
+    if (!(await confirmDialog({ title: `${label}に提案書をまとめて送付しますか？`, confirmLabel: '送付する' }))) return;
 
     setIsPublishingAllRequests(true);
     setMessage(null);
@@ -481,9 +482,12 @@ export default function AssignmentStudentPicker() {
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         if (res.status === 409 && !force) {
-          const ok = window.confirm(
-            `${data.detail || '未割当が残っています。'}\n\n強制確定しますか？`,
-          );
+          const ok = await confirmDialog({
+            title: '強制確定しますか？',
+            message: data.detail || '未割当が残っています。',
+            confirmLabel: '強制確定する',
+            destructive: true,
+          });
           if (ok) return handleFinalize(true);
         }
         throw new Error(data.detail || 'シフト確定に失敗しました');

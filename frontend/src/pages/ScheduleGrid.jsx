@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAdminSession } from '../hooks/useAdminSession';
 import { AdminSidebar } from '../components/AdminSidebar';
 import { apiFetch } from '../utils/apiClient';
+import { confirmDialog } from '../utils/confirmDialog';
 import { parseApiError } from '../utils/apiError';
 
 const WEEKDAY_JA = ['日', '月', '火', '水', '木', '金', '土'];
@@ -53,7 +54,7 @@ function FixedSlot({ onCancel, assignment }) {
     >
       <span className="text-xs font-bold text-amber-900 leading-tight truncate max-w-full">{subject}</span>
       {assignment?.student_name && (
-        <span className="text-[10px] text-amber-800/80 truncate max-w-full">{assignment.student_name}</span>
+        <span className="text-xs text-amber-800/80 truncate max-w-full">{assignment.student_name}</span>
       )}
     </button>
   );
@@ -64,7 +65,7 @@ function TutoringSlot({ lane, onCancel }) {
   if (!a) {
     return (
       <div className="h-12 rounded-lg border border-dashed border-gray-200 bg-gray-50/80 flex items-center justify-center">
-        <span className="text-[11px] text-gray-400 font-medium">空き</span>
+        <span className="text-xs text-gray-400 font-medium">空き</span>
       </div>
     );
   }
@@ -76,14 +77,14 @@ function TutoringSlot({ lane, onCancel }) {
       className="w-full h-12 rounded-lg border border-sky-200 bg-sky-50 hover:bg-red-50 px-2 text-left transition-colors"
     >
       <p className="text-xs font-bold text-sky-900 leading-tight truncate">{a.subject}</p>
-      <p className="text-[10px] text-gray-600 truncate">{a.student_name}</p>
+      <p className="text-xs text-gray-600 truncate">{a.student_name}</p>
     </button>
   );
 }
 
 function ModeToggle({ mode, onChange, disabled }) {
   return (
-    <div className="flex rounded-lg overflow-hidden border border-gray-200 text-[11px] font-bold mb-2">
+    <div className="flex rounded-lg overflow-hidden border border-gray-200 text-xs font-bold mb-2">
       {[
         { id: 'tutoring', label: '講習' },
         { id: 'fixed', label: '通常授業' },
@@ -113,7 +114,7 @@ function FormatToggle({ maxLanes, disabled, onChange }) {
           type="button"
           disabled={disabled}
           onClick={() => onChange(ml)}
-          className={`flex-1 text-[10px] py-0.5 rounded font-bold border transition-colors ${
+          className={`flex-1 text-xs py-0.5 rounded font-bold border transition-colors ${
             maxLanes === ml
               ? 'bg-violet-600 text-white border-violet-600'
               : 'bg-white text-gray-500 border-gray-200 hover:border-violet-300'
@@ -205,7 +206,7 @@ function GridCell({
         <form onSubmit={handleSubmit} className="mt-2 pt-2 border-t border-gray-100 space-y-1.5">
           <ModeToggle mode={mode} onChange={setMode} disabled={isSaving} />
           {mode === 'fixed' && (
-            <p className="text-[10px] text-amber-700 font-medium leading-snug">
+            <p className="text-xs text-amber-700 font-medium leading-snug">
               {scheduleMode === 'cram'
                 ? '同一曜日・同じコマに講習期間中すべて展開されます'
                 : '同一曜日・同じコマに年度内の開校日すべて展開されます'}
@@ -401,7 +402,7 @@ export default function ScheduleGrid() {
     const label = isRegularAssignment(assignment)
       ? `${assignment.student_name} の通常授業`
       : `${assignment.student_name} の ${assignment.subject}`;
-    if (!window.confirm(`${label} を解除しますか？`)) return;
+    if (!(await confirmDialog({ title: `${label} を解除しますか？`, confirmLabel: '解除する', destructive: true }))) return;
     try {
       const res = await apiFetch('/api/admin/assignments/cancel', {
         method: 'POST',
@@ -540,7 +541,7 @@ export default function ScheduleGrid() {
                     <tr key={ts.slot} className="hover:bg-slate-50/50">
                       <td className="sticky left-0 z-10 bg-white border-r border-b border-gray-200 px-3 py-2 w-20">
                         <div className="text-xs font-bold text-gray-800">{ts.start}</div>
-                        <div className="text-[10px] text-gray-400">{ts.end} · {ts.slot}コマ</div>
+                        <div className="text-xs text-gray-400">{ts.end} · {ts.slot}コマ</div>
                       </td>
                       {visibleTeachers.map((t) => (
                         <GridCell

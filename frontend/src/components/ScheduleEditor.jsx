@@ -51,6 +51,10 @@ function slotLabel(status, role = 'teacher') {
   return { text: '空き', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' };
 }
 
+export function periodStatusLabel(status) {
+  return { DRAFT: '準備中', COLLECTING: '募集中', FINALIZED: '確定済み' }[status] ?? status;
+}
+
 export function formatDeadlineLabel(isoDate) {
   if (!isoDate) return '';
   const d = new Date(`${isoDate}T12:00:00`);
@@ -89,7 +93,7 @@ export function PeriodBanner({
         </p>
       )}
       <div className="flex flex-wrap gap-2 mt-2">
-        <span className="text-xs px-2 py-1 rounded-full bg-gray-100 text-gray-700 font-bold">{periodStatus}</span>
+        <span className="text-xs px-2 py-1 rounded-full bg-gray-100 text-gray-700 font-bold">{periodStatusLabel(periodStatus)}</span>
         {overdue && (
           <span className="text-xs px-2 py-1 rounded-full bg-red-100 text-red-700 font-bold">期限超過</span>
         )}
@@ -159,7 +163,7 @@ export function DayScheduleOverview({
         <div className="w-full rounded-xl border border-slate-300 bg-slate-50 p-2 min-h-[52px] flex flex-col items-center justify-center">
           <span className="text-sm font-bold text-slate-800">通常授業</span>
           {lane.assignment.student_name && (
-            <span className="text-[10px] text-gray-600 mt-0.5">{lane.assignment.student_name}</span>
+            <span className="text-xs text-gray-600 mt-0.5">{lane.assignment.student_name}</span>
           )}
         </div>
       );
@@ -214,7 +218,7 @@ export function DayScheduleOverview({
               <div className="flex flex-col gap-2">
                 {lanes.map((lane, laneIdx) => (
                   <div key={lane.lane ?? laneIdx}>
-                    <p className="text-[10px] font-bold text-gray-400 mb-1">
+                    <p className="text-xs font-bold text-gray-400 mb-1">
                       {['①', '②', '③', '④'][laneIdx] ?? `${laneIdx + 1}`}
                     </p>
                     <LaneCell lane={lane} />

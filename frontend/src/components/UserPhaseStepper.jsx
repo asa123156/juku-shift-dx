@@ -55,7 +55,7 @@ export function UserPhaseStepper({
               >
                 {isDone ? '✓' : idx + 1}
               </div>
-              <span className={`text-[10px] font-bold truncate w-full text-center ${
+              <span className={`text-xs font-bold truncate w-full text-center ${
                 isActive ? 'text-gray-900' : 'text-gray-500'
               }`}
               >

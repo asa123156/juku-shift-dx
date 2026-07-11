@@ -184,7 +184,7 @@ export default function Login() {
                 {isLoading ? 'ログイン中…' : 'ログイン'}
               </button>
             </form>
-            <p className="text-[11px] text-gray-400 mt-4 text-center">
+            <p className="text-xs text-gray-400 mt-4 text-center">
               デモ: {roleMeta.demo}（パスワード demo）
             </p>
           </div>

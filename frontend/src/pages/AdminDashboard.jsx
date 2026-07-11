@@ -3,8 +3,9 @@ import { useNavigate } from 'react-router-dom';
 import { useAdminSession } from '../hooks/useAdminSession';
 import { AdminSidebar } from '../components/AdminSidebar';
 import { WorkflowGuide, DEFAULT_WORKFLOW_STEPS } from '../components/WorkflowGuide';
-import { formatDeadlineLabel, isDeadlineOverdue } from '../components/ScheduleEditor';
+import { formatDeadlineLabel, isDeadlineOverdue, periodStatusLabel } from '../components/ScheduleEditor';
 import { apiFetch } from '../utils/apiClient';
+import { Toast } from '../components/Toast';
 
 function NameList({ items, emptyLabel, accent = 'gray' }) {
   const border = {
@@ -28,11 +29,11 @@ function NameList({ items, emptyLabel, accent = 'gray' }) {
           className="px-3 py-2.5 flex items-center gap-2.5 text-sm hover:bg-white/60 transition-colors"
         >
           {person.color ? (
-            <span className={`w-7 h-7 rounded-full shrink-0 flex items-center justify-center text-[10px] font-bold ${person.color}`}>
+            <span className={`w-7 h-7 rounded-full shrink-0 flex items-center justify-center text-xs font-bold ${person.color}`}>
               {person.name.charAt(0)}
             </span>
           ) : person.grade_label ? null : (
-            <span className="w-7 h-7 rounded-full shrink-0 bg-gray-200 flex items-center justify-center text-[10px] font-bold text-gray-600">
+            <span className="w-7 h-7 rounded-full shrink-0 bg-gray-200 flex items-center justify-center text-xs font-bold text-gray-600">
               {person.name.charAt(0)}
             </span>
           )}
@@ -54,7 +55,7 @@ function StatusColumn({ title, count, subtitle, items, emptyLabel, accent }) {
           <h4 className="text-sm font-bold text-gray-800">{title}</h4>
           <span className="text-lg font-bold text-gray-900 tabular-nums">{count}</span>
         </div>
-        {subtitle && <p className="text-[11px] text-gray-500 mt-0.5">{subtitle}</p>}
+        {subtitle && <p className="text-xs text-gray-500 mt-0.5">{subtitle}</p>}
       </div>
       <NameList items={items} emptyLabel={emptyLabel} accent={accent} />
     </div>
@@ -197,10 +198,10 @@ export default function AdminDashboard() {
           <div className="mb-4">
             <h2 className="text-2xl font-bold text-gray-900">管理ダッシュボード</h2>
             {loadError && <p className="text-red-500 text-sm mt-2">{loadError}</p>}
-            {periodMessage && <p className="text-emerald-600 text-sm mt-2 font-bold">{periodMessage}</p>}
+            <Toast message={periodMessage} onClose={() => setPeriodMessage(null)} />
             {activePeriod && (
               <p className="text-sm text-gray-600 mt-1">
-                {activePeriod.name}（{activePeriod.status}）
+                {activePeriod.name}（{periodStatusLabel(activePeriod.status)}）
                 {activePeriod.submission_deadline && (
                   <span className={`ml-2 font-bold ${isDeadlineOverdue(activePeriod.submission_deadline) ? 'text-red-600' : 'text-gray-700'}`}>
                     提出期限 {formatDeadlineLabel(activePeriod.submission_deadline)}

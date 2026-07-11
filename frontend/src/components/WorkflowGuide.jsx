@@ -92,7 +92,7 @@ function StepCard({ step, onNavigate }) {
             <p className="text-xs font-bold text-gray-500 mt-2">{step.detail}</p>
           )}
           {step.alt_path && step.status !== 'pending' && (
-            <p className="text-[10px] text-blue-600 mt-1">
+            <p className="text-xs text-blue-600 mt-1">
               Excel不要の場合は時間割表から手入力も可
             </p>
           )}

@@ -4,6 +4,7 @@ import { useAdminSession } from '../hooks/useAdminSession';
 import { AdminSidebar } from '../components/AdminSidebar';
 import { DEFAULT_MATCH_RULES, MatchRulesPanel, collectSubjects } from '../components/MatchRulesPanel';
 import { apiFetch } from '../utils/apiClient';
+import { confirmDialog } from '../utils/confirmDialog';
 
 function familyName(fullName) {
   if (!fullName) return '';
@@ -63,7 +64,7 @@ function StudentSlotCell({ slot, pendingSubjects, onCancel }) {
   if (avail === '×') {
     return <div className="text-center py-1 text-lg font-bold text-gray-400">×</div>;
   }
-  return <div className="text-center py-1 text-[11px] font-bold text-emerald-600">空き</div>;
+  return <div className="text-center py-1 text-xs font-bold text-emerald-600">空き</div>;
 }
 
 function TeacherSlotCell({ slot, onAssign, onCancel }) {
@@ -86,7 +87,7 @@ function TeacherSlotCell({ slot, onAssign, onCancel }) {
     if (lane?.occupied && lane.lesson_kind === '通常') {
       return (
         <div className="w-full min-h-[40px] rounded border border-rose-200 bg-rose-50 p-1 text-center">
-          <div className="text-[10px] font-bold text-rose-700">通常</div>
+          <div className="text-xs font-bold text-rose-700">通常</div>
           <div className="text-sm font-bold text-rose-600">◎</div>
         </div>
       );
@@ -100,10 +101,10 @@ function TeacherSlotCell({ slot, onAssign, onCancel }) {
           title="クリックで割当解除"
           className="w-full min-h-[40px] rounded border border-emerald-200 bg-emerald-50 hover:bg-red-50 p-1 text-center"
         >
-          <div className="text-[10px] font-bold text-emerald-800 leading-tight">
+          <div className="text-xs font-bold text-emerald-800 leading-tight">
             {familyName(a.student_name)}
           </div>
-          <div className="text-[10px] text-emerald-700">{subjectAbbr(a.subject)}</div>
+          <div className="text-xs text-emerald-700">{subjectAbbr(a.subject)}</div>
         </button>
       );
     }
@@ -112,14 +113,14 @@ function TeacherSlotCell({ slot, onAssign, onCancel }) {
         <button
           type="button"
           onClick={onAssign}
-          className="w-full min-h-[40px] rounded border border-dashed border-gray-300 hover:bg-blue-50 hover:border-blue-300 text-[10px] font-bold text-gray-400"
+          className="w-full min-h-[40px] rounded border border-dashed border-gray-300 hover:bg-blue-50 hover:border-blue-300 text-xs font-bold text-gray-400"
         >
           空き
         </button>
       );
     }
     return (
-      <div className="w-full min-h-[40px] rounded border border-gray-100 bg-gray-50 text-[10px] text-gray-300 flex items-center justify-center">
+      <div className="w-full min-h-[40px] rounded border border-gray-100 bg-gray-50 text-xs text-gray-300 flex items-center justify-center">
         —
       </div>
     );
@@ -148,7 +149,7 @@ function TeacherSlotCell({ slot, onAssign, onCancel }) {
             title="クリックで割当解除"
             className="w-full text-center py-0.5 px-0.5 bg-emerald-50 hover:bg-red-50 rounded transition-colors"
           >
-            <div className="text-[11px] font-bold text-emerald-800 leading-tight">
+            <div className="text-xs font-bold text-emerald-800 leading-tight">
               {familyName(a.student_name)} {subjectAbbr(a.subject)}
             </div>
           </button>
@@ -157,7 +158,7 @@ function TeacherSlotCell({ slot, onAssign, onCancel }) {
           <button
             type="button"
             onClick={onAssign}
-            className="w-full text-center py-0.5 text-[10px] font-bold text-gray-400 hover:bg-blue-50 hover:text-blue-600 rounded"
+            className="w-full text-center py-0.5 text-xs font-bold text-gray-400 hover:bg-blue-50 hover:text-blue-600 rounded"
           >
             ＋
           </button>
@@ -183,7 +184,7 @@ function TeacherSlotCell({ slot, onAssign, onCancel }) {
     <button
       type="button"
       onClick={onAssign}
-      className="w-full text-center py-1 text-[11px] font-bold text-gray-400 hover:bg-blue-50 hover:text-blue-600 rounded min-h-[36px]"
+      className="w-full text-center py-1 text-xs font-bold text-gray-400 hover:bg-blue-50 hover:text-blue-600 rounded min-h-[36px]"
     >
       空き
     </button>
@@ -209,7 +210,7 @@ function MultiDayTable({ timeSlots, dates, renderCell }) {
           <tr key={ts.slot} className="border-b border-gray-200">
             <td className="p-1.5 border-r border-gray-200 bg-gray-50 sticky left-0 z-10 align-middle">
               <div className="font-bold text-xs">{ts.slot}コマ</div>
-              <div className="text-[10px] text-gray-500 whitespace-nowrap">{ts.start}〜</div>
+              <div className="text-xs text-gray-500 whitespace-nowrap">{ts.start}〜</div>
             </td>
             {dates.map((d) => (
               <td key={d.date} className="p-0.5 align-middle border-r border-gray-100 last:border-r-0">
@@ -381,7 +382,7 @@ export default function AssignmentBoard() {
 
   const handleCancel = async (assignment) => {
     if (!periodId || !assignment) return;
-    if (!window.confirm(`${assignment.student_name} の ${assignment.subject} 割当を解除しますか？`)) return;
+    if (!(await confirmDialog({ title: `${assignment.student_name} の ${assignment.subject} 割当を解除しますか？`, confirmLabel: '解除する', destructive: true }))) return;
     try {
       const res = await apiFetch('/api/admin/assignments/cancel', {
         method: 'POST',
@@ -571,7 +572,7 @@ export default function AssignmentBoard() {
             <div className="order-3 xl:order-none xl:row-start-2 xl:col-start-2 w-full flex flex-col min-h-[360px]">
               {currentTeacher ? (
                 <PaperSheet title="講師スケジュール" entityName={currentTeacher.name} subtitle={`${dates.length}日分`}>
-                  <p className="text-[10px] text-gray-500 mb-1 px-1">①② = 2レーン（通常◎があっても片方に追加割当可）</p>
+                  <p className="text-xs text-gray-500 mb-1 px-1">①② = 2レーン（通常◎があっても片方に追加割当可）</p>
                   <MultiDayTable
                     timeSlots={timeSlots}
                     dates={dates}

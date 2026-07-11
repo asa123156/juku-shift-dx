@@ -3,7 +3,10 @@ import { useNavigate } from 'react-router-dom';
 import { useAdminSession } from '../hooks/useAdminSession';
 import { AdminSidebar } from '../components/AdminSidebar';
 import { apiFetch } from '../utils/apiClient';
+import { confirmDialog } from '../utils/confirmDialog';
 import { parseApiError } from '../utils/apiError';
+import { periodStatusLabel } from '../components/ScheduleEditor';
+import { Toast } from '../components/Toast';
 
 const LEVEL_OPTIONS = [
   { value: 'elementary', label: '小学部' },
@@ -210,7 +213,7 @@ export default function AdminManage() {
   };
 
   const handleDeletePeriod = async (period) => {
-    if (!window.confirm(`講習「${period.name}」を削除しますか？\nあとで復元できます。`)) return;
+    if (!(await confirmDialog({ title: `講習「${period.name}」を削除しますか？`, message: 'あとで復元できます。', confirmLabel: '削除する', destructive: true }))) return;
     setMessage(null);
     setError(null);
     try {
@@ -276,7 +279,7 @@ export default function AdminManage() {
   };
 
   const handleResetStudentPassword = async (s) => {
-    if (!window.confirm(`「${s.name}」のパスワードを再発行しますか？`)) return;
+    if (!(await confirmDialog({ title: `「${s.name}」のパスワードを再発行しますか？`, message: '現在のパスワードは使えなくなります。', confirmLabel: '再発行する' }))) return;
     setMessage(null);
     setError(null);
     try {
@@ -290,7 +293,7 @@ export default function AdminManage() {
   };
 
   const handleDeleteStudent = async (s) => {
-    if (!window.confirm(`「${s.name}」を削除しますか？\n割当・希望データも削除されます。`)) return;
+    if (!(await confirmDialog({ title: `「${s.name}」を削除しますか？`, message: '割当・希望データも削除されます。', confirmLabel: '削除する', destructive: true }))) return;
     setMessage(null);
     setError(null);
     try {
@@ -345,7 +348,7 @@ export default function AdminManage() {
   };
 
   const handleResetTeacherPassword = async (t) => {
-    if (!window.confirm(`「${t.name}」のパスワードを再発行しますか？`)) return;
+    if (!(await confirmDialog({ title: `「${t.name}」のパスワードを再発行しますか？`, message: '現在のパスワードは使えなくなります。', confirmLabel: '再発行する' }))) return;
     setMessage(null);
     setError(null);
     try {
@@ -359,7 +362,7 @@ export default function AdminManage() {
   };
 
   const handleDeleteTeacher = async (t) => {
-    if (!window.confirm(`「${t.name}」を削除しますか？`)) return;
+    if (!(await confirmDialog({ title: `「${t.name}」を削除しますか？`, confirmLabel: '削除する', destructive: true }))) return;
     setMessage(null);
     setError(null);
     try {
@@ -390,8 +393,8 @@ export default function AdminManage() {
           <p className="text-sm text-gray-500 mt-2">講習の作成・生徒・講師の登録。日曜は自動で休校。開校する日を個別に選べます。</p>
         </header>
 
-        {error && <p className="text-red-500 mb-4">{error}</p>}
-        {message && <p className="text-emerald-600 font-bold mb-4">{message}</p>}
+        <Toast message={error} type="error" onClose={() => setError(null)} />
+        <Toast message={message} onClose={() => setMessage(null)} />
 
         {activePeriodId && (
           <div className="mb-6 p-4 bg-violet-50 border border-violet-200 rounded-2xl flex flex-wrap items-center justify-between gap-3">
@@ -518,7 +521,7 @@ export default function AdminManage() {
                   <div>
                     <span className="font-bold">{p.name}</span>
                     <span className="text-sm text-gray-500 ml-2">{p.start_date} 〜 {p.end_date}</span>
-                    <span className="text-xs ml-2 px-2 py-0.5 rounded-full bg-gray-100">{p.status}</span>
+                    <span className="text-xs ml-2 px-2 py-0.5 rounded-full bg-gray-100">{periodStatusLabel(p.status)}</span>
                   </div>
                   {p.id !== activePeriodId && (
                     <div className="flex items-center gap-3">
