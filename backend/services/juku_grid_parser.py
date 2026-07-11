@@ -185,6 +185,38 @@ def _teacher_col_for_name_col(name_col: int, teacher_columns: list[int]) -> int 
     return None
 
 
+def _horizontal_date_map(
+    df: pd.DataFrame,
+    teacher_columns: list[int],
+    default_year: int,
+    max_scan_rows: int = 5,
+) -> dict[int, str]:
+    """週間シート（日付が行頭に横並び）の 講師列→ISO日付 マップを返す。
+
+    先頭数行から日付型セルを2つ以上含む行を探し、各講師列に
+    「その列以左で最も近い日付」を割り当てる。見つからなければ空 dict
+    （= 従来どおりシート単位の日付を使う）。
+    """
+    for row_idx in range(min(max_scan_rows, len(df))):
+        row = df.iloc[row_idx]
+        found: list[tuple[int, str]] = []
+        for col in range(len(row)):
+            val = row.iloc[col]
+            if isinstance(val, (datetime, date)):
+                d = val.date() if isinstance(val, datetime) else val
+                if default_year:
+                    d = d.replace(year=default_year)
+                found.append((col, d.isoformat()))
+        if len(found) >= 2:
+            mapping: dict[int, str] = {}
+            for tc in teacher_columns:
+                left = [iso for col, iso in found if col <= tc]
+                if left:
+                    mapping[tc] = left[-1]
+            return mapping
+    return {}
+
+
 def _name_columns_in_header(header: pd.Series) -> list[int]:
     return [i for i, v in enumerate(header) if _cell_text(v) == "氏名"]
 
@@ -234,6 +266,10 @@ def parse_grid_dataframe(
     current_slot: str | None = None
     header_row_idx: int | None = None
     current_date = iso_date
+
+    # 週間シート（1枚に複数日が横並び）: 講師列ブロックごとに日付を割り当てる
+    year_for_map = period_year or int(iso_date[:4])
+    date_by_teacher_col = _horizontal_date_map(df, teacher_columns, year_for_map)
 
     for row_idx in range(len(df)):
         row = df.iloc[row_idx]
@@ -289,7 +325,7 @@ def parse_grid_dataframe(
 
             records.append(
                 {
-                    "date": current_date,
+                    "date": date_by_teacher_col.get(teacher_col, current_date),
                     "slot_key": current_slot,
                     "seat": seat,
                     "student_name": student_name,
