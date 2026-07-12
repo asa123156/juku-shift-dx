@@ -257,7 +257,7 @@ def _run_single_workflow(client: TestClient, run_index: int, failures: list[str]
         json={
             "period_id": period_id,
             "rules": {
-                "no_teacher_gaps": True,
+                "no_gaps": True,
                 "weekly_limits": {"数学": 2, "英語": 2, "国語": 1},
             },
         },

@@ -207,7 +207,7 @@ def run_tests() -> None:
         json={
             "period_id": 1,
             "rules": {
-                "no_teacher_gaps": True,
+                "no_gaps": True,
                 "weekly_limits": {"国語": 1, "数学": 2, "英語": 0},
             },
         },

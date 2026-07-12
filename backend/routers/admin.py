@@ -194,7 +194,7 @@ def assign_manual(body: ManualAssignRequest) -> AssignmentGridResponse:
         student_id = matches[0]["id"]
         student_name = matches[0]["name"]
 
-    if not body.is_fixed and not body.subject.strip():
+    if not body.is_fixed and not (body.lesson_type or "").strip() and not body.subject.strip():
         raise HTTPException(status_code=400, detail="講習枠では科目を入力してください")
 
     rules = MatchRules.from_dict(body.rules.model_dump() if body.rules else None)
@@ -214,6 +214,7 @@ def assign_manual(body: ManualAssignRequest) -> AssignmentGridResponse:
         skip_rules=body.skip_rules,
         is_fixed=body.is_fixed,
         period_id=body.period_id,
+        lesson_type=body.lesson_type,
     )
     return AssignmentGridResponse.model_validate(grid)
 
@@ -461,6 +462,7 @@ def list_assignment_candidates(body: AssignmentCandidatesRequest) -> AssignmentC
         current_assignments,
         student_slots=student_slots,
         subject=body.subject,
+        student_id=body.student_id,
     )
     candidates = [AssignmentCandidate.model_validate(c) for c in ranked]
 

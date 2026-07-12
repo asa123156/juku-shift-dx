@@ -5,6 +5,7 @@ from services.match_rules import (
     SLOTS,
     exceeds_weekly_limit,
     weekly_limit_for,
+    would_create_student_gap,
     would_create_teacher_gap,
     would_violate_student_consecutive_limit,
     would_violate_teacher_consecutive_limit,
@@ -142,11 +143,6 @@ def get_assignment_candidates(
             if exceeds_weekly_limit(student_id, subject, date, pool, rules):
                 continue
 
-            if rules.no_teacher_gaps and would_create_teacher_gap(
-                teacher.id, slot, date, teacher.slots, current_assignments
-            ):
-                continue
-
             if would_violate_student_consecutive_limit(
                 student_id, slot, date, current_assignments
             ):
@@ -157,14 +153,29 @@ def get_assignment_candidates(
             ):
                 continue
 
+            gap_free = not (
+                would_create_teacher_gap(
+                    teacher.id, slot, date, teacher.slots, current_assignments
+                )
+                or would_create_student_gap(
+                    student_id, slot, date, student_slots, current_assignments
+                )
+            )
             valid_candidates.append(
                 {
                     "teacher_id": teacher.id,
                     "teacher_name": teacher.name,
                     "slot": slot,
+                    "gap_free": gap_free,
                 }
             )
 
+    # 空きコマなしは優先度ルール: 満たす候補があればそれだけを使い、
+    # 1件も無ければルールを無視して全候補で埋める
+    if rules.no_gaps:
+        gap_free_candidates = [c for c in valid_candidates if c["gap_free"]]
+        if gap_free_candidates:
+            return gap_free_candidates
     return valid_candidates
 
 
@@ -174,16 +185,22 @@ def score_candidate(
     date: str,
     current_assignments: list[dict],
     rules: MatchRules | None = None,
+    student_id: int | None = None,
 ) -> int:
     rules = rules or MatchRules()
     score = 90 if teacher.slots.get(slot, "") == "" else 60
 
-    if rules.no_teacher_gaps:
-        from services.match_rules import teacher_occupied_slots
+    if rules.no_gaps:
+        from services.match_rules import student_assigned_slots, teacher_occupied_slots
 
         occupied = teacher_occupied_slots(teacher.id, date, teacher.slots, current_assignments)
         if (slot - 1) in occupied or (slot + 1) in occupied:
             score += 15
+
+        if student_id is not None:
+            s_occupied = student_assigned_slots(student_id, date, current_assignments)
+            if (slot - 1) in s_occupied or (slot + 1) in s_occupied:
+                score += 15
 
     return min(score, 100)
 
@@ -196,6 +213,7 @@ def rank_candidates(
     rules: MatchRules | None = None,
     student_slots: dict[int, str] | None = None,
     subject: str = "",
+    student_id: int | None = None,
 ) -> list[dict]:
     rules = rules or MatchRules()
     teacher_map = {t.id: t for t in teacher_list}
@@ -206,7 +224,8 @@ def rank_candidates(
             {
                 **c,
                 "match_score": score_candidate(
-                    teacher, c["slot"], date, current_assignments, rules
+                    teacher, c["slot"], date, current_assignments, rules,
+                    student_id=student_id,
                 ),
             }
         )
@@ -251,6 +270,7 @@ def pick_best_candidate(
         rules,
         student_slots=student_slots,
         subject=subject,
+        student_id=student_id,
     )
     return ranked[0]
 
@@ -306,10 +326,15 @@ def validate_assignment(
         limit = weekly_limit_for(subject, rules)
         return f"{subject}は週{limit}コマまでです"
 
-    if rules.no_teacher_gaps and would_create_teacher_gap(
+    if rules.no_gaps and would_create_teacher_gap(
         teacher_id, slot, date, teacher.slots, current_assignments
     ):
         return "空きコマが途中に残ります（空きコマなしルール）"
+
+    if rules.no_gaps and would_create_student_gap(
+        student_id, slot, date, student_slots, current_assignments
+    ):
+        return "生徒の授業の途中に空きコマが残ります（空きコマなしルール）"
 
     if would_violate_student_consecutive_limit(
         student_id, slot, date, current_assignments

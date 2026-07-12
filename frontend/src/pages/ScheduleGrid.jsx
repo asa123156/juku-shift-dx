@@ -8,6 +8,7 @@ import { parseApiError } from '../utils/apiError';
 
 const WEEKDAY_JA = ['日', '月', '火', '水', '木', '金', '土'];
 const SUBJECT_OPTIONS = ['国語', '数学', '英語', '理科', '社会'];
+const LESSON_TYPE_OPTIONS = ['体験', '振替', '代講', '追加コマ', '入試対策', '3DAYS', '国理社'];
 const TEACHERS_PER_PAGE = 6;
 const TEACHER_COL_WIDTH_PX = 140;
 const TIME_COL_WIDTH_PX = 80;
@@ -41,20 +42,25 @@ function formatRegularSubject(subject) {
 
 function FixedSlot({ onCancel, assignment }) {
   const subject = formatRegularSubject(assignment?.subject);
+  const otherType = (assignment?.lesson_type || '').trim();
+  const isOther = Boolean(otherType);
   return (
     <button
       type="button"
       onClick={() => assignment && onCancel(assignment)}
       title={assignment ? 'クリックで解除' : undefined}
       className={`w-full h-12 rounded-lg border-2 flex flex-col items-center justify-center transition-colors px-1 ${
-        assignment
-          ? 'border-amber-300 bg-amber-50 hover:bg-red-50 cursor-pointer'
-          : 'border-amber-200 bg-amber-50/80'
+        isOther
+          ? (assignment ? 'border-violet-300 bg-violet-50 hover:bg-red-50 cursor-pointer' : 'border-violet-200 bg-violet-50/80')
+          : (assignment ? 'border-amber-300 bg-amber-50 hover:bg-red-50 cursor-pointer' : 'border-amber-200 bg-amber-50/80')
       }`}
     >
-      <span className="text-xs font-bold text-amber-900 leading-tight truncate max-w-full">{subject}</span>
+      <span className={`text-xs font-bold leading-tight truncate max-w-full ${isOther ? 'text-violet-900' : 'text-amber-900'}`}>{subject}</span>
       {assignment?.student_name && (
-        <span className="text-xs text-amber-800/80 truncate max-w-full">{assignment.student_name}</span>
+        <span className={`text-xs truncate max-w-full ${isOther ? 'text-violet-800/80' : 'text-amber-800/80'}`}>{assignment.student_name}</span>
+      )}
+      {isOther && (
+        <span className="text-xs font-bold text-violet-700 bg-violet-100 rounded px-1 leading-tight truncate max-w-full">{otherType}</span>
       )}
     </button>
   );
@@ -87,7 +93,8 @@ function ModeToggle({ mode, onChange, disabled }) {
     <div className="flex rounded-lg overflow-hidden border border-gray-200 text-xs font-bold mb-2">
       {[
         { id: 'tutoring', label: '講習' },
-        { id: 'fixed', label: '通常授業' },
+        { id: 'fixed', label: '通常' },
+        { id: 'other', label: 'その他' },
       ].map(({ id, label }) => (
         <button
           key={id}
@@ -143,6 +150,7 @@ function GridCell({
   const [mode, setMode] = useState('tutoring');
   const [subject, setSubject] = useState('');
   const [studentName, setStudentName] = useState('');
+  const [lessonType, setLessonType] = useState('');
   const key = `${teacherId}-${slotNum}`;
   const isSaving = savingKey === key;
   const blocked = isBlockedCell(slotInfo);
@@ -166,11 +174,13 @@ function GridCell({
       subject: subj,
       studentName: name,
       isFixed: mode === 'fixed',
+      lessonType: mode === 'other' ? (lessonType.trim() || 'その他') : null,
       key,
     });
     if (ok) {
       setSubject('');
       setStudentName('');
+      setLessonType('');
     }
   };
 
@@ -212,6 +222,22 @@ function GridCell({
                 : '同一曜日・同じコマに年度内の開校日すべて展開されます'}
             </p>
           )}
+          {mode === 'other' && (
+            <>
+              <p className="text-xs text-violet-700 font-medium leading-snug">
+                この日だけ登録されます（毎週展開なし）
+              </p>
+              <input
+                type="text"
+                value={lessonType}
+                onChange={(e) => setLessonType(e.target.value)}
+                placeholder="種別（例: 体験・振替）"
+                list="grid-lesson-type-options"
+                disabled={isSaving}
+                className="w-full text-xs border rounded-md px-2 py-1.5 focus:outline-none focus:ring-2 border-violet-200 focus:ring-violet-300"
+              />
+            </>
+          )}
           <input
             type="text"
             value={subject}
@@ -222,7 +248,9 @@ function GridCell({
             className={`w-full text-xs border rounded-md px-2 py-1.5 focus:outline-none focus:ring-2 ${
               mode === 'fixed'
                 ? 'border-amber-200 focus:ring-amber-300'
-                : 'border-gray-200 focus:ring-sky-300'
+                : mode === 'other'
+                  ? 'border-violet-200 focus:ring-violet-300'
+                  : 'border-gray-200 focus:ring-sky-300'
             }`}
           />
           <input
@@ -235,14 +263,20 @@ function GridCell({
             className={`w-full text-xs border rounded-md px-2 py-1.5 focus:outline-none focus:ring-2 ${
               mode === 'fixed'
                 ? 'border-amber-200 focus:ring-amber-300'
-                : 'border-gray-200 focus:ring-sky-300'
+                : mode === 'other'
+                  ? 'border-violet-200 focus:ring-violet-300'
+                  : 'border-gray-200 focus:ring-sky-300'
             }`}
           />
           <button
             type="submit"
             disabled={isSaving || !studentName.trim() || !subject.trim()}
             className={`w-full text-xs py-1.5 rounded-md text-white font-bold disabled:bg-gray-300 ${
-              mode === 'fixed' ? 'bg-amber-700 hover:bg-amber-800' : 'bg-gray-800 hover:bg-gray-900'
+              mode === 'fixed'
+                ? 'bg-amber-700 hover:bg-amber-800'
+                : mode === 'other'
+                  ? 'bg-violet-700 hover:bg-violet-800'
+                  : 'bg-gray-800 hover:bg-gray-900'
             }`}
           >
             {isSaving ? '保存中…' : '登録'}
@@ -355,8 +389,8 @@ export default function ScheduleGrid() {
     }
   };
 
-  const handleCellSave = async ({ date, teacherId, teacherName, slot, subject, studentName, isFixed, key }) => {
-    const targetPeriodId = isFixed ? regularPeriodId : (cramPeriodId ?? regularPeriodId);
+  const handleCellSave = async ({ date, teacherId, teacherName, slot, subject, studentName, isFixed, lessonType, key }) => {
+    const targetPeriodId = (isFixed || lessonType) ? regularPeriodId : (cramPeriodId ?? regularPeriodId);
     if (!targetPeriodId) {
       setError('年度または講習期間が設定されていません');
       return false;
@@ -376,6 +410,7 @@ export default function ScheduleGrid() {
           period_id: targetPeriodId,
           skip_rules: true,
           is_fixed: isFixed,
+          lesson_type: lessonType || null,
         }),
       });
       if (!res.ok) throw new Error(await parseApiError(res, '保存に失敗しました'));
@@ -383,7 +418,9 @@ export default function ScheduleGrid() {
       setMessage(
         isFixed
           ? `${studentName}（${subject}）を同一曜日の開校日すべてに登録しました`
-          : `${studentName}（${subject}）を ${teacherName} に登録しました`,
+          : lessonType
+            ? `${studentName}（${subject}・${lessonType}）をこの日だけ登録しました`
+            : `${studentName}（${subject}）を ${teacherName} に登録しました`,
       );
       return true;
     } catch (err) {
@@ -446,6 +483,11 @@ export default function ScheduleGrid() {
           <option key={s.id} value={s.name} />
         ))}
       </datalist>
+      <datalist id="grid-lesson-type-options">
+        {LESSON_TYPE_OPTIONS.map((t) => (
+          <option key={t} value={t} />
+        ))}
+      </datalist>
 
       <div className="flex-1 flex flex-col min-w-0">
         <div className="bg-white border-b border-gray-200 px-4 lg:px-6 py-4">
@@ -476,6 +518,7 @@ export default function ScheduleGrid() {
           <div className="flex flex-wrap gap-4 mt-3 text-xs text-gray-500">
             <span className="flex items-center gap-1"><span className="inline-block w-5 h-5 rounded border-2 border-amber-300 bg-amber-50" /> 通常授業</span>
             <span className="flex items-center gap-1"><span className="inline-block w-5 h-5 rounded border border-sky-200 bg-sky-50" /> 講習</span>
+            <span className="flex items-center gap-1"><span className="inline-block w-5 h-5 rounded border-2 border-violet-300 bg-violet-50" /> その他（体験・振替など）</span>
             <span className="flex items-center gap-1"><span className="inline-block w-5 h-5 rounded border border-dashed border-gray-200" /> 空き</span>
           </div>
         </div>

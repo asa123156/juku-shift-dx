@@ -110,11 +110,63 @@ def test_import_records() -> None:
     )
 
 
+def test_import_records_preserves_lesson_type_for_other_category() -> None:
+    """種別が「体験」等（講習を含まない特殊値）の場合、is_fixed=True のまま lesson_type が保存されること。
+
+    lesson_kind 自体は今まで通り 通常/講習 の2値のまま（他の機能への影響を避けるため）で、
+    「その他」区分は lesson_type の有無からフロント（時間割表）が判定する。
+    """
+    from scripts.generate_demo_data import main as generate_demo
+    from services.class_schedule_store import get_schedules_for_date
+    from services.entity_store import reset_entities_for_tests
+    from services.period_store import reset_periods_for_tests
+
+    generate_demo()
+    reset_periods_for_tests()
+    reset_entities_for_tests()
+
+    records = [
+        {
+            "date": "2026-06-11",
+            "slot_key": "2",
+            "student_name": "グリッド体験子",
+            "grade": "小4",
+            "subject": "算数",
+            "lesson_type": "体験",
+            "teacher_name": "グリッド先生",
+            "row_idx": 7,
+        },
+        {
+            "date": "2026-06-11",
+            "slot_key": "3",
+            "student_name": "グリッド通常男",
+            "grade": "小4",
+            "subject": "国語",
+            "lesson_type": "",
+            "teacher_name": "グリッド先生",
+            "row_idx": 8,
+        },
+    ]
+    import_juku_grid_records(1, records)
+
+    schedules = get_schedules_for_date("2026-06-11")
+    trial = next(r for r in schedules if r["student_name"] == "グリッド体験子")
+    assert trial["is_fixed"] is True
+    assert trial["lesson_kind"] == "通常"  # 挙動（ロック等）は変えない
+    assert trial["lesson_type"] == "体験"  # 生テキストは保持（フロント判定用）
+
+    regular = next(r for r in schedules if r["student_name"] == "グリッド通常男")
+    assert regular["is_fixed"] is True
+    assert regular["lesson_kind"] == "通常"
+    assert not regular["lesson_type"]
+
+
 def run_tests() -> None:
     test_parse_hakutei_template()
     test_list_schedule_sheets_skips_reference()
     test_parse_minimal_grid()
     test_import_records()
+    test_import_records_preserves_lesson_type_for_other_category()
     print("juku grid tests passed.")
 
 

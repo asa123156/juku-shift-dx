@@ -60,7 +60,7 @@ def test_no_teacher_gap_rule() -> None:
     assignments = [
         {"date": DATE, "student_id": 2, "subject": "英語", "teacher_id": 1, "slot": 1},
     ]
-    rules = MatchRules(no_teacher_gaps=True, weekly_limits={})
+    rules = MatchRules(no_gaps=True, weekly_limits={})
     result = get_assignment_candidates(
         1, "数学I", teachers, assignments, DATE, rules=rules,
         student_slots=_student_slots(),
@@ -74,7 +74,7 @@ def test_student_three_consecutive_limit() -> None:
         {"date": DATE, "student_id": 1, "subject": "数学", "teacher_id": 1, "slot": 1},
         {"date": DATE, "student_id": 1, "subject": "国語", "teacher_id": 1, "slot": 2},
     ]
-    rules = MatchRules(no_teacher_gaps=False, weekly_limits={"英語": 0})
+    rules = MatchRules(no_gaps=False, weekly_limits={"英語": 0})
     open_slots = {1: "", 2: "", 3: "", 4: ""}
     result = get_assignment_candidates(
         1, "英語", teachers, assignments, DATE, rules=rules, student_slots=open_slots
@@ -90,7 +90,7 @@ def test_teacher_four_consecutive_limit() -> None:
         {"date": DATE, "student_id": 3, "subject": "国語", "teacher_id": 1, "slot": 2},
         {"date": DATE, "student_id": 4, "subject": "英語", "teacher_id": 1, "slot": 3},
     ]
-    rules = MatchRules(no_teacher_gaps=False, weekly_limits={"理科": 0})
+    rules = MatchRules(no_gaps=False, weekly_limits={"理科": 0})
     result = get_assignment_candidates(
         1, "理科", teachers, assignments, DATE, rules=rules,
         student_slots=_student_slots(),
@@ -162,6 +162,46 @@ def test_assignable_on_empty_slots() -> None:
     assert any(c["slot"] == 4 for c in result)
 
 
+def test_no_student_gap_rule() -> None:
+    """生徒に既存授業がある場合、間を飛ばすコマは候補から除外される（隣接候補があるとき）。"""
+    # 講師2人: 田中は生徒の既存授業を担当、佐藤はどのコマも空き（講師側ギャップの影響なし）
+    teachers = [
+        _teacher(1, "田中", {1: "待機", 2: "待機", 3: "待機", 4: "待機"}),
+        _teacher(2, "佐藤", {1: "待機", 2: "待機", 3: "待機", 4: "待機"}),
+    ]
+    assignments = [
+        {"date": DATE, "student_id": 1, "subject": "数学", "teacher_id": 1, "slot": 1},
+    ]
+    rules = MatchRules(no_gaps=True, weekly_limits={})
+    result = get_assignment_candidates(
+        1, "英語", teachers, assignments, DATE, rules=rules,
+        student_slots=_student_slots(),
+    )
+    # スロット2（隣接）は候補にあり、スロット3・4（間に空きができる）は除外される
+    assert any(c["slot"] == 2 for c in result)
+    assert all(c["slot"] != 3 for c in result)
+    assert all(c["slot"] != 4 for c in result)
+
+
+def test_gap_rule_falls_back_when_no_alternative() -> None:
+    """空きコマなしを満たす候補がゼロなら、ルールを無視して埋める。"""
+    # 生徒は1コマ目に授業あり・2コマ目は×（塾に居ない）→ 3コマ目しか空いていない。
+    # 3コマ目への割当は 2コマ目が×なのでギャップにはならない…ではなく、
+    # 講師側で確実にギャップを作る状況を作る: 講師は1コマ目に別生徒を担当、
+    # 生徒は3コマ目のみ空き → 講師視点で2コマ目が空きギャップになる。
+    teachers = [_teacher(1, "田中", {1: "待機", 2: "待機", 3: "待機", 4: "不可"})]
+    assignments = [
+        {"date": DATE, "student_id": 2, "subject": "数学", "teacher_id": 1, "slot": 1},
+    ]
+    student_slots = {1: "×", 2: "×", 3: "", 4: "×"}
+    rules = MatchRules(no_gaps=True, weekly_limits={})
+    result = get_assignment_candidates(
+        1, "英語", teachers, assignments, DATE, rules=rules, student_slots=student_slots
+    )
+    # 唯一の選択肢（講師ギャップを作る slot 3）が、フォールバックで候補に残る
+    assert any(c["teacher_id"] == 1 and c["slot"] == 3 for c in result)
+
+
 def run_tests() -> None:
     test_rejects_unavailable_teacher_slot()
     test_rejects_student_unavailable_slot()
@@ -169,6 +209,8 @@ def run_tests() -> None:
     test_weekly_math_limit()
     test_weekly_kokugo_limit()
     test_no_teacher_gap_rule()
+    test_no_student_gap_rule()
+    test_gap_rule_falls_back_when_no_alternative()
     test_student_three_consecutive_limit()
     test_teacher_four_consecutive_limit()
     test_weekly_limit_absorbs_arithmetic_into_math()

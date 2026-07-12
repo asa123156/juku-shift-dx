@@ -140,6 +140,7 @@ class ClassSchedule(Base):
     subject: Mapped[str] = mapped_column(String(255), nullable=False, default="")
     is_fixed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     source: Mapped[str] = mapped_column(String(20), nullable=False, default="manual")
+    lesson_type: Mapped[str | None] = mapped_column(String(20), nullable=True)
 
 
 class TeacherSlotCapacity(Base):

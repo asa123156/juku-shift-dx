@@ -13,6 +13,10 @@ class AssignmentRecord(BaseModel):
     slot: int = Field(ge=1, le=SLOT_COUNT)
     lesson_kind: str = Field(default="講習", pattern="^(通常|講習)$")
     is_fixed: bool | None = Field(default=None, description="True=通常授業（◎固定）")
+    lesson_type: str | None = Field(
+        default=None,
+        description="Excel「種別」の生テキスト（体験・振替など）。時間割表でのみ「その他」表示に使う",
+    )
 
 
 class AssignmentCandidate(BaseModel):
@@ -63,7 +67,7 @@ class ImportAssignmentRequestsResponse(BaseModel):
 
 
 class MatchRulesRequest(BaseModel):
-    no_teacher_gaps: bool = True
+    no_gaps: bool = True
     weekly_limits: dict[str, int] = Field(
         default_factory=lambda: {"国語": 1, "数学": 2, "英語": 0, "理科": 0, "社会": 0}
     )
@@ -78,6 +82,11 @@ class ManualAssignRequest(BaseModel):
     slot: int = Field(ge=1, le=SLOT_COUNT)
     period_id: int | None = Field(default=None, ge=1)
     is_fixed: bool = Field(default=False, description="True=通常授業（◎固定）")
+    lesson_type: str | None = Field(
+        default=None,
+        max_length=20,
+        description="「その他」登録時の種別名（体験・振替など）。指定時は固定枠・単日登録",
+    )
     rules: MatchRulesRequest | None = None
     skip_rules: bool = Field(
         default=False,
@@ -137,6 +146,9 @@ class AssignmentGridResponse(BaseModel):
     students: list[AssignmentGridStudent] = Field(default_factory=list)
     assignments: list[AssignmentRecord]
     pending_requests: list[AssignmentRequestItem]
+    # build_assignment_grid が返す年度/講習の文脈。宣言しないと FastAPI に
+    # 落とされ、フロントの時間割表で解除・登録が効かなくなる。
+    period_context: dict | None = None
 
 
 class AutoAssignResponse(BaseModel):

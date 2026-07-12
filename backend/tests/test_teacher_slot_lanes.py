@@ -67,7 +67,7 @@ def test_four_lanes_full_when_four_assignments() -> None:
 
 def test_assignment_allowed_on_regular_slot() -> None:
     teachers = [_teacher(1, "田中", {1: "", 2: "", 3: "", 4: ""})]
-    rules = MatchRules(no_teacher_gaps=False, weekly_limits={"数学": 0})
+    rules = MatchRules(no_gaps=False, weekly_limits={"数学": 0})
     open_slots = {1: "", 2: "", 3: "", 4: ""}
     result = get_assignment_candidates(
         1, "数学", teachers, [], "2026-06-10", rules=rules, student_slots=open_slots

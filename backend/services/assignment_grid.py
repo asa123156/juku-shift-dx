@@ -157,7 +157,12 @@ def manual_assign(
     skip_rules: bool = False,
     is_fixed: bool = False,
     period_id: int | None = None,
+    lesson_type: str | None = None,
 ) -> dict:
+    # 「その他」（体験・振替など）: 通常授業と同じ固定枠扱いだが、単発予定なので毎週展開しない
+    other_type = (lesson_type or "").strip() or None
+    if other_type:
+        is_fixed = True
     grid = build_assignment_grid(iso_date)
     teacher_row = next((t for t in grid["teachers"] if t["id"] == teacher_id), None)
     if teacher_row is None:
@@ -203,7 +208,7 @@ def manual_assign(
             )
 
     if is_fixed and not subject.strip():
-        subject = "通常"
+        subject = other_type or "通常"
 
     from services.fiscal_year_store import resolve_schedule_period_for_date
     from services.schedule_context import tutoring_period_id_for_date
@@ -226,11 +231,12 @@ def manual_assign(
         slot=slot,
         lesson_kind="通常" if is_fixed else "講習",
         is_fixed=is_fixed,
+        lesson_type=other_type,
     )
     if skip_rules or is_fixed:
         from services.class_schedule_store import add_fixed_schedule_with_weekly_repeat, add_schedule
 
-        if is_fixed and period_id is not None:
+        if is_fixed and period_id is not None and other_type is None:
             add_fixed_schedule_with_weekly_repeat(record, period_id=period_id, source="manual")
         else:
             add_schedule(record, period_id=period_id, is_fixed=is_fixed, source="manual")

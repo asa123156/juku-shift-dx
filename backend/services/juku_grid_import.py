@@ -93,6 +93,7 @@ def import_juku_grid_records(period_id: int, records: list[dict[str, Any]]) -> d
                     "slot": int(slot_key),
                     "is_fixed": True,
                     "source": "excel",
+                    "lesson_type": lesson_type,
                 }
             )
             stats["regular_slots"] += 1

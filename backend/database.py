@@ -86,6 +86,12 @@ def migrate_sqlite_schema() -> None:
                 text("ALTER TABLE assignments ADD COLUMN lesson_kind VARCHAR(10) DEFAULT '講習'")
             )
             conn.commit()
+        class_schedule_cols = {
+            row[1] for row in conn.execute(text("PRAGMA table_info(class_schedules)")).fetchall()
+        }
+        if "lesson_type" not in class_schedule_cols:
+            conn.execute(text("ALTER TABLE class_schedules ADD COLUMN lesson_type VARCHAR(20)"))
+            conn.commit()
         teacher_cols = {
             row[1] for row in conn.execute(text("PRAGMA table_info(teacher_profiles)")).fetchall()
         }

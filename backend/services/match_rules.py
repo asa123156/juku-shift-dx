@@ -27,7 +27,9 @@ DEFAULT_WEEKLY_LIMITS: dict[str, int] = {
 
 @dataclass
 class MatchRules:
-    no_teacher_gaps: bool = True
+    # 生徒・講師とも授業と授業の間に空きコマを作らない（優先度ルール。
+    # 満たせる候補が無い場合はルールを無視して埋める）
+    no_gaps: bool = True
     weekly_limits: dict[str, int] = field(default_factory=lambda: dict(DEFAULT_WEEKLY_LIMITS))
 
     @classmethod
@@ -38,14 +40,15 @@ class MatchRules:
         if data.get("weekly_limits"):
             for k, v in data["weekly_limits"].items():
                 limits[normalize_limit_subject(k)] = int(v)
+        no_gaps = data.get("no_gaps", data.get("no_teacher_gaps", True))  # 旧キー互換
         return cls(
-            no_teacher_gaps=bool(data.get("no_teacher_gaps", True)),
+            no_gaps=bool(no_gaps),
             weekly_limits=limits,
         )
 
     def model_dump(self) -> dict:
         return {
-            "no_teacher_gaps": self.no_teacher_gaps,
+            "no_gaps": self.no_gaps,
             "weekly_limits": dict(self.weekly_limits),
         }
 
@@ -155,6 +158,36 @@ def student_assigned_slots(
         for a in all_assignments
         if a["date"] == iso_date and a["student_id"] == student_id
     }
+
+
+def would_create_student_gap(
+    student_id: int,
+    slot: int,
+    iso_date: str,
+    student_slots: dict[int, str],
+    all_assignments: list[dict],
+) -> bool:
+    """割当後に生徒スケジュールの途中に空きコマが残るか（講師版と同型）。
+
+    通常授業（◎）は授業として占有扱い。「×」は生徒が塾に居ない枠なので
+    占有にもギャップにも数えず、割当可能な空き（""）だけをギャップとみなす。
+    """
+    from services.student_slot_codec import parse_student_slot
+
+    occupied = student_assigned_slots(student_id, iso_date, all_assignments)
+    for s in SLOTS:
+        if parse_student_slot(student_slots.get(s, ""))["kind"] == "通常授業":
+            occupied.add(s)
+    occupied.add(slot)
+    if len(occupied) < 2:
+        return False
+    lo, hi = min(occupied), max(occupied)
+    for s in range(lo, hi + 1):
+        if s in occupied:
+            continue
+        if parse_student_slot(student_slots.get(s, ""))["kind"] == "空き":
+            return True
+    return False
 
 
 def longest_consecutive_run(occupied: set[int]) -> int:

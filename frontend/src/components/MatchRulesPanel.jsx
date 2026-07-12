@@ -9,7 +9,7 @@ export const DEFAULT_WEEKLY_LIMITS = {
 };
 
 export const DEFAULT_MATCH_RULES = {
-  no_teacher_gaps: true,
+  no_gaps: true,
   weekly_limits: { ...DEFAULT_WEEKLY_LIMITS },
 };
 
@@ -65,9 +65,9 @@ export function MatchRulesPanel({ rules, onChange, subjects }) {
       <div className="flex flex-wrap items-center gap-4 mb-3">
         <span className="text-sm font-bold text-gray-700">マッチングルール</span>
         <RuleToggle
-          label="空きコマなし（講師の途中に空きを残さない）"
-          checked={rules.no_teacher_gaps}
-          onChange={(v) => onChange({ ...rules, no_teacher_gaps: v })}
+          label="空きコマなし（生徒・講師とも途中に空きを残さない／無理なら無視して埋める）"
+          checked={rules.no_gaps}
+          onChange={(v) => onChange({ ...rules, no_gaps: v })}
         />
       </div>
       <div>

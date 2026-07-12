@@ -43,6 +43,7 @@ def row_to_dict(row: ClassScheduleRow) -> dict:
         "slot": row.slot,
         "is_fixed": bool(row.is_fixed),
         "lesson_kind": "通常" if row.is_fixed else "講習",
+        "lesson_type": row.lesson_type,
         "source": row.source,
     }
 
@@ -67,6 +68,7 @@ def assignment_record_to_row(
         subject=record.subject,
         is_fixed=fixed,
         source=source,
+        lesson_type=getattr(record, "lesson_type", None),
     )
 
 
@@ -296,6 +298,7 @@ def save_schedules_for_date(
                     slot=int(item["slot"]),
                     is_fixed=bool(is_fixed),
                     source=item.get("source") or "manual",
+                    lesson_type=item.get("lesson_type"),
                 )
             )
         db.commit()
