@@ -66,6 +66,7 @@ export default function PrintStudentSchedules() {
   const [schedule, setSchedule] = useState(null);
   const [error, setError] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [selectedIds, setSelectedIds] = useState(null); // null = 未初期化（全員選択予定）
 
   useEffect(() => {
     if (!isReady) return;
@@ -119,6 +120,29 @@ export default function PrintStudentSchedules() {
     return list;
   }, [schedule]);
 
+  // 講習を切り替えて生徒リストが変わったら、まず全員を選択状態にする
+  useEffect(() => {
+    if (students.length) {
+      setSelectedIds(new Set(students.map((s) => s.id)));
+    } else {
+      setSelectedIds(new Set());
+    }
+  }, [students]);
+
+  const toggleStudent = (id) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const selectedStudents = useMemo(
+    () => students.filter((s) => selectedIds?.has(s.id)),
+    [students, selectedIds],
+  );
+
   if (!isReady) return null;
 
   return (
@@ -152,12 +176,60 @@ export default function PrintStudentSchedules() {
         <button
           type="button"
           onClick={() => window.print()}
-          disabled={!students.length}
+          disabled={!selectedStudents.length}
           className="ml-auto px-5 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-40 text-white rounded-lg text-sm font-bold"
         >
-          🖨 印刷する
+          🖨 印刷する（{selectedStudents.length}名）
         </button>
       </div>
+
+      {/* 生徒の選択（印刷時は非表示） */}
+      {students.length > 0 && (
+        <div className="print:hidden max-w-5xl mx-auto px-4 pt-4">
+          <div className="bg-white border border-gray-200 rounded-xl p-3">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-sm font-bold text-gray-700">印刷する生徒を選択</span>
+              <div className="flex gap-3 text-xs font-bold">
+                <button
+                  type="button"
+                  onClick={() => setSelectedIds(new Set(students.map((s) => s.id)))}
+                  className="text-blue-600 hover:underline"
+                >
+                  すべて選択
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedIds(new Set())}
+                  className="text-gray-500 hover:underline"
+                >
+                  すべて解除
+                </button>
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {students.map((s) => {
+                const checked = selectedIds?.has(s.id) ?? false;
+                return (
+                  <label
+                    key={s.id}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-sm cursor-pointer select-none ${
+                      checked ? 'bg-blue-50 border-blue-300 text-blue-900' : 'bg-gray-50 border-gray-200 text-gray-500'
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() => toggleStudent(s.id)}
+                      className="rounded border-gray-300"
+                    />
+                    {s.name}
+                  </label>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="max-w-5xl mx-auto p-4 print:p-0 print:max-w-none">
         {error && <p className="text-red-500 text-sm mb-4 print:hidden">{error}</p>}
@@ -167,9 +239,14 @@ export default function PrintStudentSchedules() {
             この講習にはまだ割当がありません
           </p>
         )}
+        {!isLoading && students.length > 0 && selectedStudents.length === 0 && (
+          <p className="text-gray-500 text-sm py-12 text-center print:hidden">
+            生徒が選択されていません
+          </p>
+        )}
 
         <div className="grid grid-cols-1 sm:grid-cols-2 print:grid-cols-2 gap-4 print:gap-3">
-          {students.map((s) => (
+          {selectedStudents.map((s) => (
             <StudentCard key={s.id} student={s} periodName={schedule?.period_name ?? ''} timeByStot={timeByStot} />
           ))}
         </div>
