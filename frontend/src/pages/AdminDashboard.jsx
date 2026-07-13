@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAdminSession } from '../hooks/useAdminSession';
 import { AdminSidebar } from '../components/AdminSidebar';
 import { WorkflowGuide, DEFAULT_WORKFLOW_STEPS } from '../components/WorkflowGuide';
-import { formatDeadlineLabel, isDeadlineOverdue, periodStatusLabel } from '../components/ScheduleEditor';
+import { formatDeadlineLabel, isDeadlineOverdue, periodStatusLabel, LoadingSpinner } from '../components/ScheduleEditor';
 import { apiFetch } from '../utils/apiClient';
 import { Toast } from '../components/Toast';
 
@@ -264,7 +264,7 @@ export default function AdminDashboard() {
         )}
 
         {!summary && !loadError && activePeriodId && (
-          <p className="text-gray-500 py-12 text-center">読み込み中...</p>
+          <LoadingSpinner />
         )}
 
         {changeRequests.length > 0 && (

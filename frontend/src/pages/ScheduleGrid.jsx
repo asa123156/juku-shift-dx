@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { LoadingSpinner } from '../components/ScheduleEditor';
 import { useNavigate } from 'react-router-dom';
 import { useAdminSession } from '../hooks/useAdminSession';
 import { AdminSidebar } from '../components/AdminSidebar';
@@ -528,7 +529,7 @@ export default function ScheduleGrid() {
             <p className="text-amber-800 bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm">年度が初期化されていません。ページを再読み込みしてください。</p>
           )}
           {isLoading ? (
-            <p className="text-gray-500 py-16 text-center">読み込み中...</p>
+            <LoadingSpinner />
           ) : teachers.length === 0 ? (
             <p className="text-gray-500 py-16 text-center">講師が登録されていません。</p>
           ) : (

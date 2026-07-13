@@ -109,7 +109,7 @@ export default function Login() {
       <div className="max-w-4xl w-full">
         <div className="text-center mb-8">
           <h1 className="text-3xl font-bold text-gray-900">JUKU-SHIFT DX</h1>
-          <p className="text-gray-600 mt-2">講習シフト管理 — Excel あり・なしどちらでも使えます</p>
+          <p className="text-gray-600 mt-2">講習シフト管理システム</p>
         </div>
 
         {step === 'select' && (

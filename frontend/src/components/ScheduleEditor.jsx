@@ -108,7 +108,7 @@ export function PeriodBanner({
   );
 }
 
-export function DateTabs({ dates, selectedDate, onSelect, accent = 'blue' }) {
+export function DateTabs({ dates, selectedDate, onSelect, accent = 'blue', markers = {} }) {
   const active = accent === 'emerald'
     ? 'bg-emerald-600 text-white shadow-md'
     : 'bg-blue-600 text-white shadow-md';
@@ -117,20 +117,72 @@ export function DateTabs({ dates, selectedDate, onSelect, accent = 'blue' }) {
       {dates.map((isoDate) => {
         const d = new Date(`${isoDate}T12:00:00`);
         const day = ['日', '月', '火', '水', '木', '金', '土'][d.getDay()];
+        const blockedCount = markers[isoDate] ?? 0;
         return (
           <button
             key={isoDate}
             type="button"
             onClick={() => onSelect(isoDate)}
-            className={`shrink-0 min-w-[64px] rounded-xl p-2.5 text-center transition-all border ${
+            className={`relative shrink-0 min-w-[64px] rounded-xl p-2.5 text-center transition-all border ${
               selectedDate === isoDate ? active : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'
             }`}
           >
             <div className="text-xs opacity-90">{day}</div>
             <div className="text-lg font-bold leading-tight">{d.getDate()}</div>
+            {blockedCount > 0 && (
+              <span
+                title={`× を ${blockedCount} コマ設定済み`}
+                className={`absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 rounded-full text-[11px] leading-[18px] font-bold ${
+                  selectedDate === isoDate ? 'bg-white text-red-600' : 'bg-red-500 text-white'
+                }`}
+              >
+                {blockedCount}
+              </span>
+            )}
           </button>
         );
       })}
+    </div>
+  );
+}
+
+/** 選択中の日のコマをまとめて設定するボタン行（ロック済みコマは対象外） */
+export function DayBulkActions({ onAllFree, onAllBlocked, disabled, accent = 'blue' }) {
+  const freeCls = accent === 'emerald'
+    ? 'border-emerald-300 text-emerald-700 hover:bg-emerald-50'
+    : 'border-blue-300 text-blue-700 hover:bg-blue-50';
+  return (
+    <div className="flex items-center justify-end gap-2 mb-3">
+      <span className="text-xs text-gray-500">この日をまとめて:</span>
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={onAllFree}
+        className={`text-xs font-bold px-3 py-1.5 rounded-lg border bg-white disabled:opacity-40 ${freeCls}`}
+      >
+        すべて空き
+      </button>
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={onAllBlocked}
+        className="text-xs font-bold px-3 py-1.5 rounded-lg border border-red-300 text-red-600 bg-white hover:bg-red-50 disabled:opacity-40"
+      >
+        すべて ×
+      </button>
+    </div>
+  );
+}
+
+/** 「読み込み中...」の代わりに使う回転スピナー */
+export function LoadingSpinner({ label = '読み込み中...' }) {
+  return (
+    <div className="flex flex-col items-center justify-center gap-3 py-12 text-gray-500">
+      <span
+        aria-hidden="true"
+        className="w-8 h-8 rounded-full border-4 border-gray-200 border-t-blue-500 animate-spin"
+      />
+      <span className="text-sm">{label}</span>
     </div>
   );
 }

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { LoadingSpinner } from '../components/ScheduleEditor';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useAdminSession } from '../hooks/useAdminSession';
 import { AdminSidebar } from '../components/AdminSidebar';
@@ -542,7 +543,7 @@ export default function AssignmentBoard() {
         <MatchRulesPanel rules={matchRules} onChange={setMatchRules} subjects={ruleSubjects} />
 
         {isLoading ? (
-          <p className="p-8 text-center text-gray-500">読み込み中...</p>
+          <LoadingSpinner />
         ) : (
           <div className="flex flex-col gap-3 xl:grid xl:grid-cols-2 xl:grid-rows-[auto_1fr] xl:items-start">
             <div className="order-1 xl:order-none xl:row-start-2 xl:col-start-1 w-full flex flex-col min-h-[360px]">

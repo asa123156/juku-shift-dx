@@ -11,6 +11,8 @@ import {
   TimeSlotRow,
   PeriodBanner,
   DateTabs,
+  DayBulkActions,
+  LoadingSpinner,
   DayScheduleOverview,
   collectProposalChanges,
   submitChangeProposal,
@@ -76,6 +78,56 @@ export default function StudentShift() {
     window.addEventListener('beforeunload', onBeforeUnload);
     return () => window.removeEventListener('beforeunload', onBeforeUnload);
   }, [hasUnsavedChanges]);
+
+  const setAllSlotsForDay = async (symbol) => {
+    if (!teacherId || !selectedDate || isSaving || readonly || proposalMode) return;
+    const locked = lockedByDate[selectedDate] ?? {};
+    const daySlots = scheduleByDate[selectedDate] ?? EMPTY_SLOTS;
+    const targets = Object.keys(daySlots).filter(
+      (n) => !locked[String(n)] && daySlots[n] !== symbol,
+    );
+    if (!targets.length) return;
+    const prev = { ...scheduleByDate };
+    setSubmitted(false);
+    setScheduleByDate((m) => ({
+      ...m,
+      [selectedDate]: { ...daySlots, ...Object.fromEntries(targets.map((n) => [n, symbol])) },
+    }));
+    setIsSaving(true);
+    try {
+      for (const n of targets) {
+        const res = await apiFetch('/api/shifts', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            teacher_id: teacherId,
+            date: selectedDate,
+            slot: Number(n),
+            status: symbol,
+          }),
+        });
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          throw new Error(body.detail || '更新に失敗しました');
+        }
+      }
+    } catch (err) {
+      setScheduleByDate(prev);
+      setError(err.message);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const xMarkers = useMemo(() => {
+    const src = proposalMode ? proposalByDate : scheduleByDate;
+    const m = {};
+    for (const [d, slots] of Object.entries(src ?? {})) {
+      const c = Object.values(slots ?? {}).filter((v) => v === '×').length;
+      if (c) m[d] = c;
+    }
+    return m;
+  }, [proposalMode, proposalByDate, scheduleByDate]);
 
   const handleLogout = async () => {
     if (!(await confirmDialog({ title: 'ログアウトしますか？', message: '提出していない変更は保存されません。', confirmLabel: 'ログアウト' }))) return;
@@ -491,10 +543,19 @@ export default function StudentShift() {
             </div>
           )}
 
-          <DateTabs dates={dates} selectedDate={selectedDate} onSelect={setSelectedDate} accent="blue" />
+          <DateTabs dates={dates} selectedDate={selectedDate} onSelect={setSelectedDate} accent="blue" markers={xMarkers} />
+
+          {!isLoading && !readonly && !proposalMode && (
+            <DayBulkActions
+              accent="blue"
+              disabled={isSaving}
+              onAllFree={() => setAllSlotsForDay('')}
+              onAllBlocked={() => setAllSlotsForDay('×')}
+            />
+          )}
 
           {isLoading ? (
-            <p className="text-gray-500 text-center py-12">読み込み中...</p>
+            <LoadingSpinner />
           ) : proposalMode ? (
             <>
               <ScheduleLegend />

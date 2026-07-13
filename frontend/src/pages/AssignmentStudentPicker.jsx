@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { LoadingSpinner } from '../components/ScheduleEditor';
 import { useNavigate } from 'react-router-dom';
 import { useAdminSession } from '../hooks/useAdminSession';
 import { AdminSidebar } from '../components/AdminSidebar';
@@ -586,7 +587,7 @@ export default function AssignmentStudentPicker() {
         )}
 
         {isLoading ? (
-          <p className="text-gray-500">読み込み中...</p>
+          <LoadingSpinner />
         ) : students.length === 0 && periodId ? (
           <p className="text-gray-500">
             生徒が登録されていません。

@@ -12,6 +12,8 @@ import {
   StudentSlotRow,
   PeriodBanner,
   DateTabs,
+  DayBulkActions,
+  LoadingSpinner,
   collectProposalChanges,
   submitChangeProposal,
 } from '../components/ScheduleEditor';
@@ -77,6 +79,30 @@ export default function StudentSchedule() {
     window.addEventListener('beforeunload', onBeforeUnload);
     return () => window.removeEventListener('beforeunload', onBeforeUnload);
   }, [hasUnsavedChanges]);
+
+  const setAllSlotsForDay = (symbol) => {
+    if (readonly || !selectedDate || proposalMode) return;
+    const locked = lockedByDate[selectedDate] ?? {};
+    setSubmitted(false);
+    setHasUnsavedChanges(true);
+    setScheduleByDate((prev) => {
+      const day = { ...(prev[selectedDate] ?? EMPTY_SLOTS) };
+      for (const n of Object.keys(day)) {
+        if (!locked[String(n)]) day[n] = symbol;
+      }
+      return { ...prev, [selectedDate]: day };
+    });
+  };
+
+  const xMarkers = useMemo(() => {
+    const src = proposalMode ? proposalByDate : scheduleByDate;
+    const m = {};
+    for (const [d, slots] of Object.entries(src ?? {})) {
+      const c = Object.values(slots ?? {}).filter((v) => v === '×').length;
+      if (c) m[d] = c;
+    }
+    return m;
+  }, [proposalMode, proposalByDate, scheduleByDate]);
 
   const handleLogout = async () => {
     if (!(await confirmDialog({ title: 'ログアウトしますか？', message: '提出していない変更は保存されません。', confirmLabel: 'ログアウト' }))) return;
@@ -473,10 +499,19 @@ export default function StudentSchedule() {
             </div>
           )}
 
-          <DateTabs dates={dates} selectedDate={selectedDate} onSelect={setSelectedDate} accent="emerald" />
+          <DateTabs dates={dates} selectedDate={selectedDate} onSelect={setSelectedDate} accent="emerald" markers={xMarkers} />
+
+          {!isLoading && !readonly && !proposalMode && (
+            <DayBulkActions
+              accent="emerald"
+              disabled={isSubmitting}
+              onAllFree={() => setAllSlotsForDay('')}
+              onAllBlocked={() => setAllSlotsForDay('×')}
+            />
+          )}
 
           {isLoading ? (
-            <p className="text-gray-500 text-center py-12">読み込み中...</p>
+            <LoadingSpinner />
           ) : (
             <>
               {(proposalMode || !readonly) && <StudentScheduleLegend />}
