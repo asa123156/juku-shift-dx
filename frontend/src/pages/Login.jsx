@@ -7,19 +7,16 @@ const ROLES = [
     id: 'student',
     title: '生徒',
     desc: '講習日程の提案書を確認し、空き / × を提出。確定後はスケジュールを閲覧。',
-    demo: 'student@example.com',
   },
   {
     id: 'teacher',
     title: '講師',
     desc: '講習日程の提案書を確認し、空き / × を提出。確定後はスケジュールを閲覧。',
-    demo: 'teacher@example.com',
   },
   {
     id: 'admin',
     title: '教室長',
     desc: '講習作成・時間割管理・提案書送付・割当・確定送付。',
-    demo: 'admin@example.com',
   },
 ];
 
@@ -46,17 +43,16 @@ export default function Login() {
   const [step, setStep] = useState('select');
   const [selectedRole, setSelectedRole] = useState(null);
   const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('demo');
+  const [password, setPassword] = useState('');
   const [error, setError] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
 
   const roleMeta = ROLES.find((r) => r.id === selectedRole);
 
   const chooseRole = (roleId) => {
-    const role = ROLES.find((r) => r.id === roleId);
     setSelectedRole(roleId);
-    setEmail(role?.demo ?? '');
-    setPassword('demo');
+    setEmail('');
+    setPassword('');
     setError(null);
     setStep('login');
   };
@@ -184,9 +180,6 @@ export default function Login() {
                 {isLoading ? 'ログイン中…' : 'ログイン'}
               </button>
             </form>
-            <p className="text-xs text-gray-400 mt-4 text-center">
-              デモ: {roleMeta.demo}（パスワード demo）
-            </p>
           </div>
         )}
       </div>
