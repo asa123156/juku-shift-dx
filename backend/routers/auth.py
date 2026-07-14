@@ -1,26 +1,34 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 
 from dependencies import CurrentUser, get_current_user
 from schemas.auth import ChangePasswordRequest, ChangePasswordResponse, LoginRequest, LoginResponse
 from security import create_access_token, verify_password
 from services.data_loader import load_users
+from services.rate_limit import check_login_allowed, record_attempt
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 
 @router.post("/login", response_model=LoginResponse)
-def login(body: LoginRequest) -> LoginResponse:
-    """
-    デモ: teacher@example.com / admin@example.com （パスワード: demo）
-    """
+def login(body: LoginRequest, request: Request) -> LoginResponse:
+    client_ip = request.client.host if request.client else "unknown"
+    blocked = check_login_allowed(client_ip, str(body.email))
+    if blocked:
+        message, retry_after = blocked
+        raise HTTPException(
+            status_code=429, detail=message, headers={"Retry-After": str(retry_after)}
+        )
+
     users = load_users()
     match = next(
         (u for u in users if u["email"].lower() == str(body.email).lower()),
         None,
     )
     if match is None or not verify_password(body.password, match["password"]):
+        record_attempt(client_ip, str(body.email), success=False)
         raise HTTPException(status_code=401, detail="メールアドレスまたはパスワードが正しくありません")
 
+    record_attempt(client_ip, str(body.email), success=True)
     role = match["role"]
     teacher_id = match.get("teacher_id")
     student_id = match.get("student_id")
