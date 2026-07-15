@@ -165,9 +165,38 @@ export default function AdminDashboard() {
   const activePeriod = periods.find((p) => p.id === activePeriodId);
   const changeRequests = summary?.change_requests ?? [];
 
-  const handleExportSchedule = () => {
+  const [isExporting, setIsExporting] = useState(false);
+  const handleExportSchedule = async () => {
     if (!activePeriodId) return;
-    window.open(`/api/export/juku-schedule?period_id=${activePeriodId}`, '_blank');
+    setIsExporting(true);
+    setLoadError(null);
+    try {
+      const res = await apiFetch(`/api/export/juku-schedule?period_id=${activePeriodId}`);
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.detail || '出力に失敗しました');
+      }
+      const disposition = res.headers.get('Content-Disposition') || '';
+      const utf8Match = disposition.match(/filename\*=UTF-8''([^;]+)/);
+      const asciiMatch = disposition.match(/filename="([^"]+)"/);
+      const filename = utf8Match
+        ? decodeURIComponent(utf8Match[1])
+        : asciiMatch?.[1] || 'schedule.xlsx';
+
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setLoadError(err.message);
+    } finally {
+      setIsExporting(false);
+    }
   };
 
   const [isBackingUp, setIsBackingUp] = useState(false);
@@ -223,10 +252,10 @@ export default function AdminDashboard() {
             <button
               type="button"
               onClick={handleExportSchedule}
-              disabled={!activePeriodId}
+              disabled={!activePeriodId || isExporting}
               className="px-4 py-2.5 text-sm bg-emerald-700 hover:bg-emerald-800 disabled:opacity-40 text-white rounded-lg font-bold"
             >
-              時間割DL
+              {isExporting ? '出力中…' : '時間割DL'}
             </button>
             <button
               type="button"
